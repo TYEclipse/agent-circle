@@ -38,6 +38,7 @@ libp2p = { version = "0.55", features = [
     "serde",
     "request-response",
     "gossipsub",
+    "relay",
 ] }
 libp2p-request-response = { version = "0.28", features = ["json"] }
 tokio = { version = "1", features = ["full"] }

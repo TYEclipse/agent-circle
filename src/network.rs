@@ -12,7 +12,7 @@ use libp2p::{
     dcutr, gossipsub, identify, kad, mdns,
     request_response::{self, Message},
     swarm::{NetworkBehaviour, SwarmEvent},
-    PeerId, StreamProtocol, Swarm, SwarmBuilder,
+    yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
@@ -38,7 +38,9 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
     let mut swarm = SwarmBuilder::with_existing_identity(libp2p_keypair.clone())
         .with_tokio()
         .with_quic()
-        .with_behaviour(move |_key| {
+        .with_relay_client(libp2p::noise::Config::new, yamux::Config::default)
+        .expect("relay transport")
+        .with_behaviour(move |_key, _relay_behaviour| {
             let mut kademlia =
                 kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
             kademlia.set_mode(Some(kad::Mode::Server));
@@ -290,7 +292,9 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
             }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(_)) => {}
-            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Dcutr(_)) => {}
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Dcutr(event)) => {
+                debug!(?event, "DCUtR");
+            }
             _ => {}
         }
 
