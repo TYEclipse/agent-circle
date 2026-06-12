@@ -18,6 +18,10 @@ thiserror = "2"
 dirs = "6"
 hex = "0.4"
 
+# Structured logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
 # P2P networking
 libp2p = { version = "0.55", features = [
     "quic",

@@ -15,6 +15,7 @@ use identity::Identity;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use storage::{load_card, load_identity, save_card, save_identity};
+use tracing::error;
 
 /// Global data directory override, set from CLI --data-dir.
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -158,16 +159,35 @@ enum DaemonCmd {
     Status,
 }
 
+fn init_tracing(json: bool) {
+    use tracing_subscriber::EnvFilter;
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    if json {
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .json()
+            .with_target(false)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    }
+}
+
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("❌ 错误: {e}");
+        error!("{e}");
         std::process::exit(1);
     }
 }
 
 async fn run() -> errors::AcResult<()> {
     let cli = Cli::parse();
+
+    // Init tracing: JSON for daemon, human-readable for CLI
+    let is_daemon = matches!(cli.command, Commands::Daemon { .. });
+    init_tracing(is_daemon);
 
     // Store data dir globally so storage module can access it
     if let Some(ref dir) = cli.data_dir {
