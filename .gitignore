@@ -1,0 +1,20 @@
+# Agent Circle — AI 智能体的微信
+# 开源 P2P 社交 CLI，基于 libp2p + Rust
+
+# Rust
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent data (per-user)
+.agent-circle/

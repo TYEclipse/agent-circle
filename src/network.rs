@@ -1,0 +1,274 @@
+//! Network module — P2P swarm powered by libp2p
+//!
+//! Transports: QUIC + TCP
+//! Discovery: mDNS (LAN) + Kademlia DHT (WAN)
+//! Chat: request/response (1-to-1) + GossipSub (group)
+
+use crate::chat::{ChatRequest, ChatResponse};
+use crate::errors::{AcError, AcResult};
+use crate::identity::Identity;
+use futures::StreamExt;
+use libp2p::{
+    dcutr, gossipsub, identify, kad, mdns,
+    request_response::{self, Message},
+    swarm::{NetworkBehaviour, SwarmEvent},
+    PeerId, StreamProtocol, Swarm, SwarmBuilder,
+};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::net::Ipv4Addr;
+use std::time::Duration;
+
+pub type ChatBehaviour = request_response::json::Behaviour<ChatRequest, ChatResponse>;
+
+#[derive(NetworkBehaviour)]
+pub struct AgentCircleBehaviour {
+    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub mdns: mdns::tokio::Behaviour,
+    pub identify: identify::Behaviour,
+    pub dcutr: dcutr::Behaviour,
+    pub chat: ChatBehaviour,
+    pub gossip: gossipsub::Behaviour,
+}
+
+pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
+    let libp2p_keypair = ed25519_to_libp2p_keypair(id)?;
+    let local_peer_id = PeerId::from(libp2p_keypair.public());
+
+    let mut swarm = SwarmBuilder::with_existing_identity(libp2p_keypair.clone())
+        .with_tokio()
+        .with_quic()
+        .with_behaviour(move |_key| {
+            let mut kademlia = kad::Behaviour::new(
+                local_peer_id,
+                kad::store::MemoryStore::new(local_peer_id),
+            );
+            kademlia.set_mode(Some(kad::Mode::Server));
+            let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
+                .expect("mDNS");
+            let identify = identify::Behaviour::new(
+                identify::Config::new(
+                    "/agent-circle/0.1.0".to_string(),
+                    libp2p_keypair.public(),
+                )
+                .with_agent_version(format!("agent-circle/{}", env!("CARGO_PKG_VERSION"))),
+            );
+            let dcutr = dcutr::Behaviour::new(local_peer_id);
+            let chat = ChatBehaviour::new(
+                [(StreamProtocol::new("/agent-circle/chat/0.1.0"), request_response::ProtocolSupport::Full)],
+                request_response::Config::default(),
+            );
+
+            // GossipSub for group chat — mesh-based pub/sub
+            let gossipsub_config = gossipsub::ConfigBuilder::default()
+                .heartbeat_interval(Duration::from_secs(2))
+                .flood_publish(true)
+                .build()
+                .expect("gossipsub config");
+            let gossip = gossipsub::Behaviour::new(
+                gossipsub::MessageAuthenticity::Signed(libp2p_keypair.clone()),
+                gossipsub_config,
+            )
+            .expect("gossipsub");
+
+            Ok(AgentCircleBehaviour { kademlia, mdns, identify, dcutr, chat, gossip })
+        })
+        .map_err(|e| AcError::Network(format!("behaviour: {e}")))?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
+        .build();
+
+    swarm.listen_on(
+        libp2p::multiaddr::Multiaddr::empty()
+            .with(libp2p::multiaddr::Protocol::Ip4(Ipv4Addr::UNSPECIFIED))
+            .with(libp2p::multiaddr::Protocol::Udp(0))
+            .with(libp2p::multiaddr::Protocol::QuicV1),
+    )
+    .map_err(|e| AcError::Network(format!("listen: {e}")))?;
+
+    println!("Agent Circle swarm built — PeerId: {}", local_peer_id);
+    Ok(swarm)
+}
+
+// ── 1-to-1 Chat ────────────────────────────────────────────────────
+
+pub fn send_chat(swarm: &mut Swarm<AgentCircleBehaviour>, peer_id: PeerId, from: &str, content: &str) {
+    let msg = ChatRequest {
+        from: from.to_string(),
+        content: content.to_string(),
+        ts: chrono::Utc::now().timestamp(),
+    };
+    swarm.behaviour_mut().chat.send_request(&peer_id, msg);
+}
+
+// ── Group Chat (GossipSub) ─────────────────────────────────────────
+
+/// Derive a deterministic topic identifier from a human-readable group name.
+pub fn group_topic(name: &str) -> gossipsub::IdentTopic {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    let hash = hasher.finish();
+    gossipsub::IdentTopic::new(format!("agent-circle/group/{hash:x}"))
+}
+
+/// Join a group topic. Call this before sending/receiving group messages.
+pub fn join_group(swarm: &mut Swarm<AgentCircleBehaviour>, name: &str) -> AcResult<()> {
+    let topic = group_topic(name);
+    swarm.behaviour_mut().gossip.subscribe(&topic)
+        .map_err(|e| AcError::Network(format!("订阅群组失败: {e}")))?;
+    Ok(())
+}
+
+/// Send a message to a group topic.
+pub fn send_group_message(
+    swarm: &mut Swarm<AgentCircleBehaviour>,
+    name: &str,
+    from: &str,
+    content: &str,
+) -> AcResult<()> {
+    let topic = group_topic(name);
+    let msg = serde_json::json!({
+        "from": from,
+        "content": content,
+        "ts": chrono::Utc::now().timestamp(),
+    });
+    let data = serde_json::to_vec(&msg)?;
+    swarm.behaviour_mut().gossip.publish(topic, data)
+        .map_err(|e| AcError::Network(format!("群发失败: {e}")))?;
+    Ok(())
+}
+
+/// List topics the node is currently subscribed to.
+pub fn list_group_topics(swarm: &Swarm<AgentCircleBehaviour>) -> Vec<String> {
+    swarm.behaviour().gossip.topics().map(|t| t.to_string()).collect()
+}
+
+// ── Key bridge ─────────────────────────────────────────────────────
+
+fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypair> {
+    let mut seed = id.to_seed_bytes();
+    let secret = libp2p::identity::ed25519::SecretKey::try_from_bytes(&mut seed)
+        .map_err(|e| AcError::Key(format!("libp2p key: {e}")))?;
+    Ok(libp2p::identity::Keypair::from(
+        libp2p::identity::ed25519::Keypair::from(secret),
+    ))
+}
+
+// ── Daemon ─────────────────────────────────────────────────────────
+
+pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
+    let mut swarm = build_swarm(id)?;
+    let local_peer_id = *swarm.local_peer_id();
+
+    // Join specified groups at startup
+    for name in groups {
+        join_group(&mut swarm, name)?;
+        let topic = group_topic(name);
+        eprintln!("👥 已加入群组 \"{name}\" → {topic}");
+    }
+
+    println!("🚀 Agent Circle 守护进程已启动");
+    println!("   PeerId:  {local_peer_id}");
+
+    let mut bootstrapped = false;
+
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                println!("🔊 {address}/p2p/{local_peer_id}");
+            }
+
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                println!("🔗 已连接: {peer_id}");
+            }
+
+            SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                println!("🔌 断开: {peer_id} ({cause:?})");
+            }
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Mdns(
+                mdns::Event::Discovered(list),
+            )) => {
+                for (peer_id, addr) in list {
+                    println!("📡 发现: {peer_id} @ {addr}");
+                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                    swarm.behaviour_mut().gossip.add_explicit_peer(&peer_id);
+                    // Dial the peer so GossipSub can form a mesh
+                    let _ = swarm.dial(addr);
+                }
+            }
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Identify(
+                identify::Event::Received { peer_id, info, .. },
+            )) => {
+                println!("ℹ️  {peer_id} — {}", info.agent_version);
+            }
+
+            // ── Chat: incoming 1-to-1 message ──────────────────────
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
+                request_response::Event::Message {
+                    peer: _,
+                    message: Message::Request { request, channel, .. },
+                    ..
+                },
+            )) => {
+                eprintln!("💬 来自 {}: {}", request.from, request.content);
+                let _ = swarm.behaviour_mut().chat.send_response(channel, ChatResponse { ack: true });
+            }
+
+            // ── Chat: ACK received ──────────────────────────
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
+                request_response::Event::Message {
+                    message: Message::Response { .. },
+                    ..
+                },
+            )) => {}
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
+                request_response::Event::OutboundFailure { peer, error, .. },
+            )) => {
+                eprintln!("❌ 消息发送失败: {peer} ({error:?})");
+            }
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
+
+            // ── GossipSub: incoming group message ───────────────────
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Gossip(
+                gossipsub::Event::Message { message, .. },
+            )) => {
+                match serde_json::from_slice::<serde_json::Value>(&message.data) {
+                    Ok(msg) => {
+                        let from = msg["from"].as_str().unwrap_or("unknown");
+                        let content = msg["content"].as_str().unwrap_or("");
+                        let topic_name = message.topic.to_string();
+                        eprintln!("👥 [{}] {}: {}", topic_name, from, content);
+                    }
+                    Err(_) => {
+                        eprintln!("👥 [{}] (收到无法解析的消息)", message.topic);
+                    }
+                }
+            }
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Gossip(_)) => {}
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(
+                kad::Event::RoutingUpdated { peer, is_new_peer, .. },
+            )) => {
+                if is_new_peer {
+                    println!("🌐 DHT: {peer}");
+                }
+            }
+
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(_)) => {}
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Dcutr(_)) => {}
+            _ => {}
+        }
+
+        if !bootstrapped && swarm.listeners().next().is_some() {
+            if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
+                eprintln!("⚠️  Kademlia bootstrap 失败: {e}");
+            } else {
+                println!("🌐 Kademlia DHT bootstrap 已启动");
+                bootstrapped = true;
+            }
+        }
+    }
+}

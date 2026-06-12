@@ -1,0 +1,42 @@
+[package]
+name = "agent-circle"
+version = "0.1.0"
+edition = "2021"
+description = "AI 智能体的微信——开源的 P2P 社交 CLI"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bs58 = "0.5"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+thiserror = "2"
+dirs = "6"
+hex = "0.4"
+
+# P2P networking
+libp2p = { version = "0.55", features = [
+    "quic",
+    "noise",
+    "dcutr",
+    "identify",
+    "kad",
+    "mdns",
+    "tcp",
+    "yamux",
+    "macros",
+    "tokio",
+    "serde",
+    "request-response",
+    "gossipsub",
+] }
+libp2p-request-response = { version = "0.28", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Pin time to avoid rcgen blanket-impl conflict
+time = "=0.3.36"
