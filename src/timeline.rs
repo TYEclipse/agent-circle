@@ -43,16 +43,14 @@ impl Timeline {
     }
 
     /// Create the genesis post — the first post on a new timeline.
-    pub fn genesis(
-        id: &Identity,
-        content: &str,
-    ) -> AcResult<TimelineNode> {
+    pub fn genesis(id: &Identity, content: &str) -> AcResult<TimelineNode> {
         let ts = chrono::Utc::now().timestamp();
         let author = id.did.clone();
 
         let node_id = hash_node(&author, content, ts, &[]);
         let sig_payload = signing_payload(&node_id, &author, content, ts, &[]);
-        let signature = bs58::encode(id.signing_key.sign(sig_payload.as_bytes()).to_bytes()).into_string();
+        let signature =
+            bs58::encode(id.signing_key.sign(sig_payload.as_bytes()).to_bytes()).into_string();
 
         Ok(TimelineNode {
             id: node_id,
@@ -67,14 +65,19 @@ impl Timeline {
     /// Append a new post to the timeline, linking to all current tips.
     /// For a linear chain, there's only one tip (the last post).
     pub fn append(&mut self, id: &Identity, content: &str) -> AcResult<TimelineNode> {
-        let parents: Vec<String> = self.nodes.last().map(|n| vec![n.id.clone()]).unwrap_or_default();
+        let parents: Vec<String> = self
+            .nodes
+            .last()
+            .map(|n| vec![n.id.clone()])
+            .unwrap_or_default();
 
         let ts = chrono::Utc::now().timestamp();
         let author = id.did.clone();
 
         let node_id = hash_node(&author, content, ts, &parents);
         let sig_payload = signing_payload(&node_id, &author, content, ts, &parents);
-        let signature = bs58::encode(id.signing_key.sign(sig_payload.as_bytes()).to_bytes()).into_string();
+        let signature =
+            bs58::encode(id.signing_key.sign(sig_payload.as_bytes()).to_bytes()).into_string();
 
         let node = TimelineNode {
             id: node_id,
@@ -104,7 +107,13 @@ impl Timeline {
 
             // Verify signature
             let vk = crate::identity::decode_did_key(&node.author)?;
-            let sig_payload = signing_payload(&node.id, &node.author, &node.content, node.ts, &node.parents);
+            let sig_payload = signing_payload(
+                &node.id,
+                &node.author,
+                &node.content,
+                node.ts,
+                &node.parents,
+            );
             let sig_bytes = bs58::decode(&node.signature)
                 .into_vec()
                 .map_err(|e| AcError::Identity(format!("节点 {i}: 签名解码失败: {e}")))?;
@@ -158,7 +167,13 @@ fn hash_node(author: &str, content: &str, ts: i64, parents: &[String]) -> String
 }
 
 /// The payload that gets signed: node_id | author | content | ts | parents
-fn signing_payload(node_id: &str, author: &str, content: &str, ts: i64, parents: &[String]) -> String {
+fn signing_payload(
+    node_id: &str,
+    author: &str,
+    content: &str,
+    ts: i64,
+    parents: &[String],
+) -> String {
     let parents_str = if parents.is_empty() {
         String::new()
     } else {

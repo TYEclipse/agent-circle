@@ -194,7 +194,9 @@ async fn run() -> errors::AcResult<()> {
             ContactCmd::List => cmd_contact_list()?,
         },
         Commands::Chat { cmd } => match cmd {
-            ChatCmd::Send { peer_id, message } => cmd_chat_send(&peer_id, &message.join(" ")).await?,
+            ChatCmd::Send { peer_id, message } => {
+                cmd_chat_send(&peer_id, &message.join(" ")).await?
+            }
         },
         Commands::Group(cmd) => match cmd {
             GroupCmd::Create { name } => cmd_group_create(&name)?,
@@ -365,7 +367,8 @@ async fn cmd_chat_send(peer_id_str: &str, message: &str) -> errors::AcResult<()>
         }
     }
 
-    swarm.dial(peer_id)
+    swarm
+        .dial(peer_id)
         .map_err(|e| errors::AcError::Network(format!("dial 失败: {e}")))?;
 
     // Wait briefly for connection
@@ -617,9 +620,13 @@ fn cmd_timeline_post(message: &str) -> errors::AcResult<()> {
 
     println!("📱 已发布朋友圈:");
     println!("   {:<12} {}", "ID:", node.id);
-    println!("   {:<12} {}", "时间:", chrono::DateTime::from_timestamp(node.ts, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_default());
+    println!(
+        "   {:<12} {}",
+        "时间:",
+        chrono::DateTime::from_timestamp(node.ts, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default()
+    );
     println!("   {:<12} {}", "内容:", node.content);
     if !node.parents.is_empty() {
         println!("   {:<12} {}", "上一条:", node.parents.join(", "));

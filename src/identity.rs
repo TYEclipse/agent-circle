@@ -4,7 +4,7 @@
 //! produces short codes (human-friendly "微信 ID"), and creates
 //! self-signed Agent Cards.
 
-use crate::errors::{AcResult as Result, AcError as Error};
+use crate::errors::{AcError as Error, AcResult as Result};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
