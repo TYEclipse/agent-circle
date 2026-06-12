@@ -3,6 +3,7 @@ name = "agent-circle"
 version = "0.1.0"
 edition = "2021"
 description = "AI 智能体的微信——开源的 P2P 社交 CLI"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
