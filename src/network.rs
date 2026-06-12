@@ -17,6 +17,7 @@ use libp2p::{
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
+use tracing::{debug, info, warn};
 
 pub type ChatBehaviour = request_response::json::Behaviour<ChatRequest, ChatResponse>;
 
@@ -90,7 +91,7 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
         )
         .map_err(|e| AcError::Network(format!("listen: {e}")))?;
 
-    println!("Agent Circle swarm built — PeerId: {}", local_peer_id);
+    info!(peer_id = %local_peer_id, "Swarm已构建");
     Ok(swarm)
 }
 
@@ -184,33 +185,33 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
     for name in groups {
         join_group(&mut swarm, name)?;
         let topic = group_topic(name);
-        eprintln!("👥 已加入群组 \"{name}\" → {topic}");
+        info!(name = %name, topic = %topic, "已加入群组");
     }
 
-    println!("🚀 Agent Circle 守护进程已启动");
-    println!("   PeerId:  {local_peer_id}");
+    info!("Agent Circle 守护进程已启动");
+    info!(peer_id = %local_peer_id, "PeerId");
 
     let mut bootstrapped = false;
 
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
-                println!("🔊 {address}/p2p/{local_peer_id}");
+                info!(addr = %address, "监听地址");
             }
 
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                println!("🔗 已连接: {peer_id}");
+                info!(peer_id = %peer_id, "已连接");
             }
 
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                println!("🔌 断开: {peer_id} ({cause:?})");
+                info!(peer_id = %peer_id, cause = ?cause, "断开");
             }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Mdns(mdns::Event::Discovered(
                 list,
             ))) => {
                 for (peer_id, addr) in list {
-                    println!("📡 发现: {peer_id} @ {addr}");
+                    info!(peer_id = %peer_id, addr = %addr, "mDNS发现");
                     swarm
                         .behaviour_mut()
                         .kademlia
@@ -224,7 +225,7 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Identify(
                 identify::Event::Received { peer_id, info, .. },
             )) => {
-                println!("ℹ️  {peer_id} — {}", info.agent_version);
+                info!(peer_id = %peer_id, agent_version = %info.agent_version, "Identify");
             }
 
             // ── Chat: incoming 1-to-1 message ──────────────────────
@@ -238,7 +239,7 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
                     ..
                 },
             )) => {
-                eprintln!("💬 来自 {}: {}", request.from, request.content);
+                info!(from = %request.from, content = %request.content, "收到私聊");
                 let _ = swarm
                     .behaviour_mut()
                     .chat
@@ -256,7 +257,7 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
                 request_response::Event::OutboundFailure { peer, error, .. },
             )) => {
-                eprintln!("❌ 消息发送失败: {peer} ({error:?})");
+                warn!(peer = %peer, error = ?error, "消息发送失败");
             }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
@@ -269,10 +270,10 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
                     let from = msg["from"].as_str().unwrap_or("unknown");
                     let content = msg["content"].as_str().unwrap_or("");
                     let topic_name = message.topic.to_string();
-                    eprintln!("👥 [{}] {}: {}", topic_name, from, content);
+                    info!(topic = %topic_name, from = %from, content = %content, "群聊消息");
                 }
                 Err(_) => {
-                    eprintln!("👥 [{}] (收到无法解析的消息)", message.topic);
+                    warn!(topic = %message.topic, "无法解析群聊消息");
                 }
             },
 
@@ -284,7 +285,7 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
                 },
             )) => {
                 if is_new_peer {
-                    println!("🌐 DHT: {peer}");
+                    debug!(peer = %peer, "DHT路由更新");
                 }
             }
 
@@ -295,9 +296,9 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
 
         if !bootstrapped && swarm.listeners().next().is_some() {
             if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
-                eprintln!("⚠️  Kademlia bootstrap 失败: {e}");
+                warn!(error = %e, "Kademlia bootstrap 失败");
             } else {
-                println!("🌐 Kademlia DHT bootstrap 已启动");
+                info!("Kademlia DHT bootstrap 已启动");
                 bootstrapped = true;
             }
         }
