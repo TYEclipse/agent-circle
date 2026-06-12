@@ -160,3 +160,28 @@ pub fn add_contact(
     });
     save_contacts(&contacts, data_dir)
 }
+
+// ── Timeline ───────────────────────────────────────────────────────
+
+use crate::timeline::Timeline;
+
+/// Load the timeline from {data_dir}/timeline.json.
+pub fn load_timeline(data_dir: Option<&PathBuf>) -> AcResult<Timeline> {
+    let dir = resolve_data_dir(data_dir)?;
+    let path = dir.join("timeline.json");
+    if !path.exists() {
+        return Ok(Timeline::new());
+    }
+    let json = fs::read_to_string(&path)?;
+    let tl: Timeline = serde_json::from_str(&json)?;
+    Ok(tl)
+}
+
+/// Save the timeline to {data_dir}/timeline.json.
+pub fn save_timeline(tl: &Timeline, data_dir: Option<&PathBuf>) -> AcResult<()> {
+    let dir = resolve_data_dir(data_dir)?;
+    let path = dir.join("timeline.json");
+    let json = serde_json::to_string_pretty(tl)?;
+    fs::write(&path, json)?;
+    Ok(())
+}
