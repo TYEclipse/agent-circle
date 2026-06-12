@@ -7,6 +7,7 @@ mod errors;
 mod identity;
 mod network;
 mod storage;
+mod timeline;
 
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
@@ -56,6 +57,10 @@ enum Commands {
     /// 群聊 — GossipSub 群组
     #[command(subcommand)]
     Group(GroupCmd),
+
+    /// 朋友圈 — 个人社交时间线
+    #[command(subcommand)]
+    Timeline(TimelineCmd),
 }
 
 #[derive(Subcommand)]
@@ -90,6 +95,19 @@ enum GroupCmd {
     },
     /// 列出已订阅的群组
     List,
+}
+
+#[derive(Subcommand)]
+enum TimelineCmd {
+    /// 发布朋友圈（创建首帖或追加新帖）
+    Post {
+        /// 内容
+        message: Vec<String>,
+    },
+    /// 查看自己的朋友圈时间线
+    Show,
+    /// 验证时间线完整性（防篡改）
+    Verify,
 }
 
 #[derive(Subcommand)]
@@ -183,6 +201,11 @@ async fn run() -> errors::AcResult<()> {
             GroupCmd::Join { name } => cmd_group_join(&name).await?,
             GroupCmd::Send { name, message } => cmd_group_send(&name, &message.join(" ")).await?,
             GroupCmd::List => cmd_group_list().await?,
+        },
+        Commands::Timeline(cmd) => match cmd {
+            TimelineCmd::Post { message } => cmd_timeline_post(&message.join(" "))?,
+            TimelineCmd::Show => cmd_timeline_show()?,
+            TimelineCmd::Verify => cmd_timeline_verify()?,
         },
     }
 
@@ -566,6 +589,93 @@ async fn cmd_group_list() -> errors::AcResult<()> {
         println!("👥 已加入的群组:");
         for t in &topics {
             println!("   {t}");
+        }
+    }
+    Ok(())
+}
+
+// ── Timeline commands ───────────────────────────────────────────────
+
+fn cmd_timeline_post(message: &str) -> errors::AcResult<()> {
+    let id = match storage::load_identity(data_dir_opt())? {
+        Some(id) => id,
+        None => {
+            eprintln!("⚠️  未找到身份，请先创建。");
+            std::process::exit(1);
+        }
+    };
+
+    let mut tl = storage::load_timeline(data_dir_opt())?;
+    let node = if tl.is_empty() {
+        let node = timeline::Timeline::genesis(&id, message)?;
+        tl.nodes.push(node.clone());
+        node
+    } else {
+        tl.append(&id, message)?
+    };
+    storage::save_timeline(&tl, data_dir_opt())?;
+
+    println!("📱 已发布朋友圈:");
+    println!("   {:<12} {}", "ID:", node.id);
+    println!("   {:<12} {}", "时间:", chrono::DateTime::from_timestamp(node.ts, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default());
+    println!("   {:<12} {}", "内容:", node.content);
+    if !node.parents.is_empty() {
+        println!("   {:<12} {}", "上一条:", node.parents.join(", "));
+    }
+    println!("   {:<12} {} 帖", "总帖数:", tl.len());
+    Ok(())
+}
+
+fn cmd_timeline_show() -> errors::AcResult<()> {
+    let id = match storage::load_identity(data_dir_opt())? {
+        Some(id) => id,
+        None => {
+            eprintln!("⚠️  未找到身份。");
+            std::process::exit(1);
+        }
+    };
+
+    let tl = storage::load_timeline(data_dir_opt())?;
+    if tl.is_empty() {
+        println!("📱 朋友圈为空。");
+        println!("   发布首帖: agent-circle timeline post \"Hello, world!\"");
+        return Ok(());
+    }
+
+    println!("📱 {} 的朋友圈 ({} 帖)", id.short_code, tl.len());
+    println!("{:=<60}", "");
+    for (i, node) in tl.nodes.iter().enumerate() {
+        let dt = chrono::DateTime::from_timestamp(node.ts, 0)
+            .map(|d| d.format("%m-%d %H:%M").to_string())
+            .unwrap_or_default();
+        println!("  [{i}] {dt}");
+        println!("      {}", node.content);
+        if i < tl.len() - 1 {
+            println!("      │");
+        }
+    }
+    println!("{:=<60}", "");
+    println!("  验证: agent-circle timeline verify");
+    Ok(())
+}
+
+fn cmd_timeline_verify() -> errors::AcResult<()> {
+    let tl = storage::load_timeline(data_dir_opt())?;
+    if tl.is_empty() {
+        println!("📱 朋友圈为空，无需验证。");
+        return Ok(());
+    }
+
+    match tl.verify() {
+        Ok(()) => {
+            println!("✅ 朋友圈时间线完整且未被篡改！");
+            println!("   总帖数: {} 帖", tl.len());
+            println!("   所有哈希链和 Ed25519 签名均已验证通过。");
+        }
+        Err(e) => {
+            eprintln!("❌ 时间线验证失败: {e}");
         }
     }
     Ok(())
