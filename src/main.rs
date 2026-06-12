@@ -16,9 +16,15 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use storage::{load_card, load_identity, save_card, save_identity};
 use tracing::error;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{reload, EnvFilter, Registry};
 
 /// Global data directory override, set from CLI --data-dir.
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Reload handle for dynamic log level switching (SIGUSR1).
+static RELOAD_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 
 /// AI 智能体的微信 — 开源的 P2P 社交 CLI
 #[derive(Parser)]
@@ -160,18 +166,23 @@ enum DaemonCmd {
 }
 
 fn init_tracing(json: bool) {
-    use tracing_subscriber::EnvFilter;
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
+    let (filter, reload_handle) = reload::Layer::new(env_filter);
+
     if json {
-        tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .json()
-            .with_target(false)
+        Registry::default()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().json().with_target(false))
             .init();
     } else {
-        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+        Registry::default()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
     }
+
+    let _ = RELOAD_HANDLE.set(reload_handle);
 }
 
 #[tokio::main]
@@ -330,6 +341,31 @@ async fn cmd_daemon_start(groups: &[String]) -> errors::AcResult<()> {
             std::process::exit(1);
         }
     };
+
+    // Spawn SIGUSR1 handler for dynamic log level switching
+    // NOTE: WSL2 has signal delivery quirks; tested on native Linux/macOS
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        if let Some(handle) = RELOAD_HANDLE.get().cloned() {
+            match signal(SignalKind::user_defined1()) {
+                Ok(mut sig) => {
+                    tokio::spawn(async move {
+                        let levels: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+                        let mut idx: usize = 2;
+                        loop {
+                            sig.recv().await;
+                            idx = (idx + 1) % levels.len();
+                            let new_level = levels[idx];
+                            let _ = handle.reload(EnvFilter::new(new_level));
+                            tracing::info!(%new_level, "📶 日志级别已切换");
+                        }
+                    });
+                }
+                Err(e) => tracing::warn!("SIGUSR1 注册失败: {e}"),
+            }
+        }
+    }
 
     network::run_daemon(&id, groups).await
 }
