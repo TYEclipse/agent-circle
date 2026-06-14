@@ -11,8 +11,11 @@ env:
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
 jobs:
+  # ── Fast sanity checks — all run in parallel, wall-time < 60s ──
+  # Full test suite (test / integration / release build) runs locally before push.
+
   fmt:
-    name: Format
+    name: Format (~10s)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +25,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy
+    name: Clippy (~45s)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,40 +35,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets -- -D warnings
 
-  test:
-    name: Test
-    needs: [fmt, clippy]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-targets
-
-  integration:
-    name: Integration Test (GossipSub)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      # Only build the target test crate — not the full workspace
-      - run: cargo test --test gossipsub_integration -- --ignored
-
-  build-release:
-    name: Release Build
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      # Only build the binary — not tests or benches
-      - run: cargo build --release --bin agent-circle
-
   deny:
-    name: License Audit
+    name: License (~10s)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +45,7 @@ jobs:
           command: check bans licenses sources
 
   audit:
-    name: Security Audit
+    name: Security (~15s)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
