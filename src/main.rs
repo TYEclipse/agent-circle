@@ -131,6 +131,21 @@ enum ServiceCmd {
         #[arg(long)]
         skip_negotiate: bool,
     },
+    /// 订阅服务 — 关注特定服务的更新通知
+    Subscribe {
+        /// 服务标识符 (如 "weather-v1" 或 "weather-v1@<peer>")
+        service_spec: String,
+        /// 订阅标签
+        #[arg(short, long, default_value = "")]
+        label: String,
+    },
+    /// 取消订阅服务
+    Unsubscribe {
+        /// 服务标识符 (如 "weather-v1" 或 "weather-v1@<peer>")
+        service_spec: String,
+    },
+    /// 列出所有已订阅的服务
+    Subscriptions,
 }
 
 #[derive(Subcommand)]
@@ -405,6 +420,12 @@ async fn run() -> errors::AcResult<()> {
                 params,
                 skip_negotiate: _skip,
             } => cmd_service_call(&peer_id, &service_id, &method, &params)?,
+            ServiceCmd::Subscribe {
+                service_spec,
+                label,
+            } => cmd_service_subscribe(&service_spec, &label)?,
+            ServiceCmd::Unsubscribe { service_spec } => cmd_service_unsubscribe(&service_spec)?,
+            ServiceCmd::Subscriptions => cmd_service_subscriptions()?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -1854,6 +1875,93 @@ fn cmd_service_negotiate(peer_id: &str, service_id: &str) -> errors::AcResult<()
             "   agent-circle service call {} {} <METHOD> '{{\"key\":\"value\"}}'",
             peer_id, service_id
         );
+    }
+    Ok(())
+}
+
+// ── Service subscription commands (S10R107) ──────────────────────
+
+/// Parse "service_id" or "service_id@peer_id" format.
+fn parse_service_spec(spec: &str) -> (&str, Option<&str>) {
+    if let Some((service_id, peer_id)) = spec.split_once('@') {
+        (service_id, Some(peer_id))
+    } else {
+        (spec, None)
+    }
+}
+
+fn cmd_service_subscribe(service_spec: &str, label: &str) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let mut subs = service_discovery::load_subscriptions(&data_dir)?;
+    let (svc_id, peer_id) = parse_service_spec(service_spec);
+
+    subs.subscribe(svc_id, peer_id, label);
+    service_discovery::save_subscriptions(&subs, &data_dir)?;
+
+    let target = if let Some(pid) = peer_id {
+        format!("{}@{}", svc_id, pid)
+    } else {
+        svc_id.to_string()
+    };
+    let label_str = if label.is_empty() {
+        String::new()
+    } else {
+        format!(" (\"{}\")", label)
+    };
+    println!("✅ 已订阅服务: {}{}", target, label_str);
+    println!("   当该服务有更新时，daemon 将自动通知你。");
+    Ok(())
+}
+
+fn cmd_service_unsubscribe(service_spec: &str) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let mut subs = service_discovery::load_subscriptions(&data_dir)?;
+    let (svc_id, peer_id) = parse_service_spec(service_spec);
+
+    let was_present = subs.unsubscribe(svc_id, peer_id);
+    service_discovery::save_subscriptions(&subs, &data_dir)?;
+
+    let target = if let Some(pid) = peer_id {
+        format!("{}@{}", svc_id, pid)
+    } else {
+        svc_id.to_string()
+    };
+
+    if was_present {
+        println!("✅ 已取消订阅: {}", target);
+    } else {
+        println!("⚠️  未找到订阅: {}", target);
+    }
+    Ok(())
+}
+
+fn cmd_service_subscriptions() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let subs = service_discovery::load_subscriptions(&data_dir)?;
+    let items = subs.list();
+
+    if items.is_empty() {
+        println!("📭 暂无服务订阅");
+        return Ok(());
+    }
+
+    println!("📋 已订阅 {} 个服务:", items.len());
+    for s in items {
+        let target = if let Some(ref pid) = s.peer_id {
+            format!("{}@{}", s.service_id, pid)
+        } else {
+            s.service_id.clone()
+        };
+        let label = if s.label.is_empty() { "—" } else { &s.label };
+        let age = chrono::Utc::now().timestamp() - s.created_at;
+        let ago = if age < 60 {
+            format!("{}s 前", age)
+        } else if age < 3600 {
+            format!("{}m 前", age / 60)
+        } else {
+            format!("{}h 前", age / 3600)
+        };
+        println!("   • {:<30}  [{}]  {}", target, label, ago);
     }
     Ok(())
 }
