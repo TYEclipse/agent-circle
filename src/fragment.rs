@@ -80,7 +80,7 @@ pub fn split_large_message(
     }
 
     let bytes = content.as_bytes();
-    let total_fragments = ((bytes.len() + FRAGMENT_SIZE - 1) / FRAGMENT_SIZE) as u32;
+    let total_fragments = bytes.len().div_ceil(FRAGMENT_SIZE) as u32;
     let mut fragments = Vec::with_capacity(total_fragments as usize);
 
     for i in 0..total_fragments {

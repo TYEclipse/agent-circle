@@ -11,6 +11,7 @@ use std::time::Instant;
 /// Each topic = a group chat; each publisher sends messages concurrently.
 #[test]
 #[ignore = "stress test — run with --ignored"]
+#[allow(clippy::needless_range_loop)]
 fn stress_gossipsub_mesh_100_topics() {
     const TOPICS: usize = 100;
     const PUBLISHERS_PER_TOPIC: usize = 10;
@@ -79,6 +80,7 @@ fn stress_gossipsub_mesh_100_topics() {
 
 /// Simulate churn: publishers join and leave topics dynamically.
 #[test]
+#[allow(clippy::needless_range_loop)]
 fn stress_gossipsub_churn() {
     const TOPICS: usize = 50;
     const ROUNDS: usize = 20;

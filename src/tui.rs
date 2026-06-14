@@ -389,13 +389,11 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Down | KeyCode::Char('j') => {
                         app.next(app.contacts.len());
                     }
-                    KeyCode::Enter => {
-                        if !app.contacts.is_empty() {
-                            let idx = app.contact_index;
-                            let name = app.contacts[idx].name.clone();
-                            app.notify(&format!("进入与 {} 的聊天", name));
-                            app.open_chat(idx);
-                        }
+                    KeyCode::Enter if !app.contacts.is_empty() => {
+                        let idx = app.contact_index;
+                        let name = app.contacts[idx].name.clone();
+                        app.notify(&format!("进入与 {} 的聊天", name));
+                        app.open_chat(idx);
                     }
                     _ => {}
                 },
@@ -832,10 +830,7 @@ fn render_timeline(f: &mut Frame, area: Rect, app: &App) {
                     format!("[{}] ", ts_str),
                     Style::default().fg(Color::DarkGray),
                 ),
-                Span::styled(
-                    format!("{}", author_short),
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled(author_short.to_string(), Style::default().fg(Color::Cyan)),
                 Span::raw(": "),
                 Span::styled(content, Style::default()),
             ])

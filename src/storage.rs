@@ -570,7 +570,7 @@ mod notification_storage_tests {
 
         clear_notifications(&tmp, "svc").unwrap();
         let n = load_notifications(&tmp).unwrap();
-        assert!(n.get("svc").is_none());
+        assert!(!n.contains_key("svc"));
         assert_eq!(n.get("other").unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&tmp);
     }
