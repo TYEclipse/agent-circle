@@ -253,7 +253,7 @@
 | 115 | 错误码体系（统一错误码 + 文档） | 每个 AcError 变体有唯一码 + 解释 |
 | 116 | 性能指标暴露（Prometheus 格式） | ✅ `agent-circle metrics` 输出 OpenMetrics |
 | 117 | 健康检查端点（本地 HTTP） | ✅ `curl http://127.0.0.1:9099/health` + `/metrics` |
-| 118 | Crash dump（panic → 结构化 dump 文件） | `~/.agent-circle/crash/2026-06-13T12:00:00.dump` |
+| 118 | Crash dump（panic → 结构化 dump 文件） | ✅ `~/.agent-circle/crash/<iso8601>.dump` |
 | 119 | 远程诊断模式（`doctor --peer <ID>`） | 请求远程节点运行诊断 |
 | 120 | S11 回顾 | Sprint 回顾文档 |
 
