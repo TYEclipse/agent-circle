@@ -84,6 +84,8 @@ enum Commands {
 enum DiagCmd {
     /// 离线消息队列统计 (pending / delivered / failed)
     Queue,
+    /// 清理过期消息和已送达记录
+    Clean,
     /// 守护进程运行状态
     Status,
 }
@@ -263,6 +265,7 @@ async fn run() -> errors::AcResult<()> {
         },
         Commands::Diag { cmd } => match cmd {
             DiagCmd::Queue => cmd_diag_queue()?,
+            DiagCmd::Clean => cmd_diag_clean()?,
             DiagCmd::Status => cmd_daemon_status()?,
         },
     }
@@ -794,6 +797,27 @@ fn cmd_diag_queue() -> errors::AcResult<()> {
             Err(e) => eprintln!("❌ 读取队列统计失败: {e}"),
         },
         Err(e) => eprintln!("❌ 打开离线队列失败: {e}"),
+    }
+    Ok(())
+}
+
+fn cmd_diag_clean() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let q = match message_queue::Queue::open(&data_dir) {
+        Ok(q) => q,
+        Err(e) => {
+            eprintln!("❌ 打开离线队列失败: {e}");
+            return Ok(());
+        }
+    };
+    let now = chrono::Utc::now().timestamp();
+    match q.expire_before(now) {
+        Ok(n) => println!("🧹 已清理 {} 条过期离线消息", n),
+        Err(e) => eprintln!("❌ 过期清理失败: {e}"),
+    }
+    match q.prune_delivered() {
+        Ok(n) => println!("🧹 已清理 {} 条已送达记录", n),
+        Err(e) => eprintln!("❌ 已送达清理失败: {e}"),
     }
     Ok(())
 }

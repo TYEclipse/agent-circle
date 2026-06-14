@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Default message TTL: 7 days in seconds.
+const DEFAULT_TTL_SECS: i64 = 7 * 24 * 3600; // 604800
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
     /// Sender's DID
@@ -12,6 +15,9 @@ pub struct ChatRequest {
     pub ts: i64,
     /// Unique message id for deduplication — retries reuse the same id
     pub msg_id: u64,
+    /// Unix timestamp (seconds) when this message expires.
+    /// After this time the message should not be retried or stored.
+    pub ttl: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,4 +29,9 @@ pub struct ChatResponse {
 /// Collision probability ~ 1/2^64 per pair — negligible.
 pub fn new_msg_id() -> u64 {
     rand::random()
+}
+
+/// Default TTL: 7 days from now (unix timestamp).
+pub fn default_ttl() -> i64 {
+    chrono::Utc::now().timestamp() + DEFAULT_TTL_SECS
 }
