@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **S11R113: 存储完整性检查** — `doctor storage` 增强：校验 card.json 存在性、contacts.json 加载+条目完整性、timeline.json Merkle-DAG 防篡改验证、services.json 加载
 - **S11R112: 网络拓扑诊断增强** — `doctor network` 显示 daemon 在线/离线、peer 列表 + 🟢🟡🔴 新鲜度标注
 - **S11R111: `agent-circle doctor` 全链路诊断** — 一键检查 identity/storage/network/contacts 四子系统；支持 `-c` 单选检查 + `--json` 输出
-- **S10R109: 服务市场 PoC — `agent-circle service publish`** — 本地发布服务到缓存（`service publish <ID> -n <NAME> -e <ENDPOINT> -d <DESC> -t <TAGS>`）；发布后在 `service list` 可见；daemon 模式下通过 GossipSub 自动广播
+
+### S12 · 文档 + 打包 (保障性)
+
+- **S12R121: 用户手册 `docs/user-guide.md`** — 从安装到发朋友圈完整流程：安装/身份创建/守护进程/好友/私聊/群聊/朋友圈/服务发现/诊断/监控/部署/附录（11 章，~300 行）
+- **S10R109: 服务市场 PoC**
 - **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
 - **S10R107: 公众号模式-服务订阅** — `ServiceSubscriptions` 订阅跟踪（`agent-circle-core`）；`agent-circle service subscribe/unsubscribe/subscriptions` CLI（支持 `service@peer` 语法 + `--label`）；`subscriptions.json` 持久化；daemon 自动检测订阅服务更新并记录通知
 - **S10R106: 服务能力协商** — `CapabilityProbe`/`CapabilityStatement`/`ProtocolVersion` 类型（`agent-circle-core`）；`agent-circle service negotiate <peer> <service>` CLI 命令（查询协议版本 + 参数格式）；`ServiceInfo` 新增 `protocol_versions` + `input_schema` 可选字段；`service call` 新增 `--skip-negotiate` 标志
