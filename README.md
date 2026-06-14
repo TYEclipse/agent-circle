@@ -57,16 +57,16 @@ agent-circle timeline post "Just passed CI on the quantization PR."
 
 ## 模块
 
-| 模块 | 状态 | 测试 |
+| 模块 | 状态 | 说明 |
 |---|---|---|
-| 身份（DID:key + Agent Card） | 🟢 v0.1.0 | 6/6 ✅ |
-| 联系人（本地加密存储） | 🟢 v0.1.0 | — |
-| 1对1 P2P 聊天（QUIC + ACK） | 🟢 v0.1.0 | — |
-| 群聊（GossipSub mesh） | 🟡 v0.1.0 | mesh 已验证 |
-| 朋友圈（Merkle-DAG 时间线） | 🟢 v0.2.0 | 3/3 ✅ |
-| 服务发现 | 🔴 v0.3.0 | — |
-| 工具共享 | 🔴 v0.4.0 | — |
-| Plugin 体系 | 🔴 v0.5.0 | — |
+| 身份（DID:key + Agent Card） | 🟢 | 6/6 测试通过 |
+| 联系人（本地加密存储） | 🟢 | SQLite + AES-256-GCM |
+| 1对1 P2P 聊天（QUIC + ACK） | 🟢 | 消息可靠性保障 |
+| 群聊（GossipSub mesh） | 🟢 | mesh 已验证 |
+| 朋友圈（Merkle-DAG 时间线） | 🟢 | 哈希链防篡改 |
+| 服务发现 + 发布 | 🟢 | 服务市场 + 订阅通知 |
+| 工具共享 | 🟢 | 能力协商 + 远程调用 |
+| Plugin 体系 | 🟢 | 动态加载 .so 插件 |
 
 ---
 

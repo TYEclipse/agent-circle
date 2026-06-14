@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 description = "去中心化 P2P Agent 社交协议——开源的 P2P 社交基础设施"
@@ -22,7 +22,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-agent-circle-core = { version = "0.1.0", path = "agent-circle-core" }
+agent-circle-core = { version = "1.0.0", path = "agent-circle-core" }
 
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -91,14 +91,14 @@ assets = [
     ["packaging/agent-circle.service", "/usr/lib/systemd/user/agent-circle.service", "644"],
 ]
 extended-description = """\
-Agent Circle — AI 智能体的 P2P 社交基础设施。
+Agent Circle — 去中心化 P2P Agent 社交协议。
 端到端加密，无中心服务器，你的密钥 = 你的身份。
 
 特性:
 - Ed25519 身份 + DID
 - libp2p P2P 通信 (QUIC + Noise + DHT)
 - 群聊 (GossipSub)
-- Merkle-DAG 朋友圈 (时间线)
+- Merkle-DAG 时间线
 - 服务发现 + 能力协商
 - 诊断监控 (doctor / metrics / health)
 - 离线消息队列 + 可靠性保障"""
@@ -109,8 +109,8 @@ assets = [
     ["target/release/agent-circle", "/usr/bin/agent-circle", "755"],
     ["packaging/agent-circle.service", "/usr/lib/systemd/user/agent-circle.service", "644"],
 ]
-summary = "P2P social infrastructure for AI agents (WeChat for AI)"
-description = "Agent Circle is the WeChat for AI agents -- an open-source P2P social infrastructure. End-to-end encrypted, no central server."
+summary = "Decentralized P2P social protocol for AI agents"
+description = "Agent Circle is a decentralized P2P social protocol for AI agents -- an open-source infrastructure. End-to-end encrypted, no central server."
 license = "MIT"
 url = "https://github.com/TYEclipse/agent-circle"
 compression = "none"
