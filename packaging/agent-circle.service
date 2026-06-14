@@ -1,0 +1,23 @@
+[Unit]
+Description=Agent Circle P2P Agent Daemon
+Documentation=https://github.com/TYEclipse/agent-circle
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/agent-circle daemon start
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.agent-circle
+ReadOnlyPaths=/usr/bin/agent-circle
+
+[Install]
+WantedBy=default.target

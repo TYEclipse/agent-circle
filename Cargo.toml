@@ -67,3 +67,28 @@ futures = "0.3"
 
 # Pin time to avoid rcgen blanket-impl conflict and RUSTSEC-2026-0009
 time = "=0.3.47"
+
+# ── Debian packaging ──
+[package.metadata.deb]
+name = "agent-circle"
+maintainer = "TYEclipse <bingyuanshiye@126.com>"
+license-file = ["LICENSE", "0"]
+depends = "$auto"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/agent-circle", "/usr/bin/agent-circle", "755"],
+    ["packaging/agent-circle.service", "/usr/lib/systemd/user/agent-circle.service", "644"],
+]
+extended-description = """\
+Agent Circle — AI 智能体的 P2P 社交基础设施。
+端到端加密，无中心服务器，你的密钥 = 你的身份。
+
+特性:
+- Ed25519 身份 + DID
+- libp2p P2P 通信 (QUIC + Noise + DHT)
+- 群聊 (GossipSub)
+- Merkle-DAG 朋友圈 (时间线)
+- 服务发现 + 能力协商
+- 诊断监控 (doctor / metrics / health)
+- 离线消息队列 + 可靠性保障"""
