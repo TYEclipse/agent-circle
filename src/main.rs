@@ -93,6 +93,16 @@ enum Commands {
         #[command(subcommand)]
         cmd: DiagCmd,
     },
+
+    /// 全链路诊断 — 一键检查身份/网络/存储/联系人 (S11R111)
+    Doctor {
+        /// 仅检查指定子系统 (identity|network|storage|contacts)
+        #[arg(short, long)]
+        check: Option<String>,
+        /// JSON 输出
+        #[arg(short, long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -469,6 +479,7 @@ async fn run() -> errors::AcResult<()> {
             DiagCmd::Clean => cmd_diag_clean()?,
             DiagCmd::Status => cmd_daemon_status()?,
         },
+        Commands::Doctor { check, json } => cmd_doctor(check.as_deref(), json)?,
     }
 
     Ok(())
@@ -2154,6 +2165,141 @@ fn cmd_plugin_list() -> errors::AcResult<()> {
         for m in &loaded {
             println!("   {} v{} — {}  {}", m.id, m.version, m.name, m.description);
         }
+    }
+    Ok(())
+}
+
+// ── Doctor command (S11R111) ────────────────────────────────────────
+
+/// Run a single check, returning (label, status_icon, detail).
+type DoctorCheck = (&'static str, &'static str, String);
+
+fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let mut checks: Vec<DoctorCheck> = Vec::new();
+
+    let should_run = |name: &str| -> bool { check_filter.is_none() || check_filter == Some(name) };
+
+    // ── Identity check ──────────────────────────────────────────
+    if should_run("identity") {
+        let _identity_path = data_dir.join("identity.key");
+        match storage::load_identity(data_dir_opt()) {
+            Ok(Some(id)) => {
+                let short = &id.did[..std::cmp::min(48, id.did.len())];
+                checks.push((
+                    "identity",
+                    "✅",
+                    format!("DID: {} · 短码: {}", short, id.short_code),
+                ));
+            }
+            Ok(None) => checks.push((
+                "identity",
+                "❌",
+                "未创建身份 - 运行 `agent-circle identity create` 创建".into(),
+            )),
+            Err(e) => checks.push(("identity", "❌", format!("加载失败: {e}"))),
+        }
+    }
+
+    // ── Storage check ───────────────────────────────────────────
+    if should_run("storage") {
+        if data_dir.exists() {
+            let card_ok = data_dir.join("card.json").exists();
+            let contacts_ok = data_dir.join("contacts.json").exists();
+            let svc_ok = data_dir.join("services.json").exists();
+            checks.push((
+                "storage",
+                "✅",
+                format!(
+                    "card.json {} · contacts.json {} · services.json {} · 路径: {}",
+                    if card_ok { "✓" } else { "✗" },
+                    if contacts_ok { "✓" } else { "✗" },
+                    if svc_ok { "✓" } else { "✗" },
+                    data_dir.display()
+                ),
+            ));
+        } else {
+            checks.push((
+                "storage",
+                "❌",
+                format!("数据目录不存在: {}", data_dir.display()),
+            ));
+        }
+    }
+
+    // ── Network check ───────────────────────────────────────────
+    if should_run("network") {
+        let sock = data_dir.join("control.sock");
+        if sock.exists() {
+            checks.push((
+                "network",
+                "✅",
+                "control socket 存在 — daemon 可能运行中".into(),
+            ));
+        } else {
+            checks.push((
+                "network",
+                "⚠️",
+                "control socket 未找到 — daemon 未运行".into(),
+            ));
+        }
+    }
+
+    // ── Contacts check ─────────────────────────────────────────
+    if should_run("contacts") {
+        match storage::load_contacts(data_dir_opt()) {
+            Ok(contacts) => {
+                if contacts.is_empty() {
+                    checks.push(("contacts", "⚠️", "联系人列表为空".into()));
+                } else {
+                    let names: Vec<_> = contacts.iter().map(|c| c.name.clone()).collect();
+                    checks.push((
+                        "contacts",
+                        "✅",
+                        format!("{} 个联系人: {}", contacts.len(), names.join(", ")),
+                    ));
+                }
+            }
+            Err(e) => checks.push(("contacts", "❌", format!("加载失败: {e}"))),
+        }
+    }
+
+    // ── Display ─────────────────────────────────────────────────
+    if json {
+        let items: Vec<serde_json::Value> = checks
+            .into_iter()
+            .map(|(name, status, detail)| {
+                serde_json::json!({"check": name, "status": status, "detail": detail})
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&items)?);
+    } else {
+        println!("╔══════════════════════════════════════════════════════════╗");
+        println!("║  🩺 Agent Circle 全链路诊断                             ║");
+        println!("╠══════════════════════════════════════════════════════════╣");
+        for (name, icon, detail) in &checks {
+            println!("║  {}  {:<8}  {:<38} ║", icon, name, detail);
+        }
+        println!("╠══════════════════════════════════════════════════════════╣");
+        let pass = checks.iter().filter(|(_, i, _)| i == &"✅").count();
+        let warn = checks.iter().filter(|(_, i, _)| i == &"⚠️").count();
+        let fail = checks.iter().filter(|(_, i, _)| i == &"❌").count();
+        println!(
+            "║  总计: {} 项  通过: {}  警告: {}  失败: {}",
+            checks.len(),
+            pass,
+            warn,
+            fail
+        );
+        let overall = if fail > 0 {
+            "❌ 有失败项"
+        } else if warn > 0 {
+            "⚠️ 有警告"
+        } else {
+            "✅ 全部通过"
+        };
+        println!("║  状态: {:<46} ║", overall);
+        println!("╚══════════════════════════════════════════════════════════╝");
     }
     Ok(())
 }
