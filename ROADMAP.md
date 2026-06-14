@@ -272,7 +272,7 @@
 | 125 | `cargo install agent-circle` 一键装 | ✅ Git 一键安装可用；crates.io 待 core 发布 |
 | 126 | `.deb` 打包（`cargo-deb`） | ✅ 4.4 MB amd64 — binary + systemd unit |
 | 127 | `.rpm` 打包 | ✅ 7.1 MB x86_64 — Python RPM builder (无 rpmbuild 依赖) |
-| 128 | Homebrew formula | `brew install tyeclipse/tap/agent-circle` |
+| 128 | Homebrew formula | ✅ 公式 + launchd plist |
 | 129 | Docker 镜像 | `docker run agent-circle daemon` |
 | 130 | S12 回顾 | Sprint 回顾文档 |
 
