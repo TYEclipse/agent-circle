@@ -235,6 +235,16 @@ enum ServiceCmd {
         /// 文章版本号 (如 1, 2, 3...)
         version: u32,
     },
+    /// 评分 — 对服务打 1–5 星 (S13R137)
+    Rate {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 评分 (1–5)
+        score: u8,
+        /// 可选评论
+        #[arg(short, long)]
+        comment: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -542,6 +552,11 @@ async fn run() -> errors::AcResult<()> {
                 service_id,
                 version,
             } => cmd_service_view(&service_id, version)?,
+            ServiceCmd::Rate {
+                service_id,
+                score,
+                comment,
+            } => cmd_service_rate(&service_id, score, comment.as_deref())?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2247,6 +2262,13 @@ fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
     }
 
     println!("📚 {} 的发布历史 (共 {} 条):", service_id, history.len());
+
+    // S13R137 — Show rating summary
+    if let Ok(summary) = storage::rating_summary(&data_dir, service_id) {
+        if summary.count > 0 {
+            println!("⭐ {}", summary.stars_display());
+        }
+    }
     println!();
     for (i, pub_msg) in history.publications.iter().take(limit).enumerate() {
         println!(
@@ -2675,6 +2697,15 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
     println!("║  📰 {}", pub_msg.title);
     println!("╠══════════════════════════════════════════════════════════╣");
     println!("║  服务: {:<49}║", pub_msg.service_id);
+
+    // S13R137 — Show rating
+    if let Ok(summary) = storage::rating_summary(&data_dir, service_id) {
+        if summary.count > 0 {
+            let stars = summary.stars_display();
+            println!("║  ⭐   {:<49}║", stars);
+        }
+    }
+
     println!("║  版本: v{:<47}║", pub_msg.version);
     println!(
         "║  时间: {:<49}║",
@@ -2719,6 +2750,38 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
             "🔏 Ed25519 签名: {}...",
             &pub_msg.signature[..std::cmp::min(16, pub_msg.signature.len())]
         );
+    }
+    Ok(())
+}
+
+// ── Service rating (S13R137) ──────────────────────────────────────
+
+fn cmd_service_rate(service_id: &str, score: u8, comment: Option<&str>) -> errors::AcResult<()> {
+    if !(1..=5).contains(&score) {
+        return Err(errors::AcError::Identity(format!(
+            "invalid score {score}: must be 1–5"
+        )));
+    }
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let identity = storage::load_identity(Some(&data_dir))?.ok_or_else(|| {
+        errors::AcError::Identity("no identity; run `agent-circle identity create` first".into())
+    })?;
+
+    let rating = agent_circle_core::publication::Rating {
+        service_id: service_id.to_string(),
+        reviewer_did: identity.did.clone(),
+        score,
+        comment: comment.map(|c| c.to_string()),
+        timestamp: chrono::Utc::now(),
+    };
+
+    storage::add_rating(&data_dir, &rating)?;
+
+    let summary = storage::rating_summary(&data_dir, service_id)?;
+    println!("⭐ 已评分: {}", summary.stars_display());
+    if comment.is_some() {
+        println!("💬 评论已保存。");
     }
     Ok(())
 }

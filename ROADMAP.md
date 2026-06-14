@@ -290,7 +290,7 @@
 | 134 | 服务发现（`agent-circle service discover`） | ✅ discover + --online 过滤 + 新鲜度分级 (daemon感知) |
 | 135 | 推送消息（服务 → 订阅者广播） | ✅ GossipSub 出版物推送 + daemon 订阅 + 自动通知 |
 | 136 | 消息格式（Markdown 支持） | ✅ service view + render_markdown (ANSI: bold/italic/code/header/list/hr) |
-| 137 | 服务评级/评论 | 订阅者可对服务打分 |
+| 137 | 服务评级/评论 | ✅ service rate + Rating/RatingSummary + stars_display + 集成到 history/view |
 | 138 | 服务市场 TUI | `agent-circle service browse` 交互式浏览 |
 | 139 | 公众号权限模型 | 公开 / 需审批 / 白名单 |
 | 140 | S13 回顾 | Sprint 回顾文档 |
