@@ -1,4 +1,4 @@
-# Agent Circle Protocol Specification v0.1.0
+# Agent Circle Protocol Specification v1.0.0
 
 ## 1. Overview
 
