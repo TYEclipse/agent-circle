@@ -265,7 +265,7 @@
 
 | 轮 | 任务 | 验收 |
 |---|---|---|
-| 121 | 用户手册（`docs/user-guide.md`） | 从安装到发朋友圈的全流程 |
+| 121 | 用户手册（`docs/user-guide.md`） | ✅ 从安装到发朋友圈的全流程 |
 | 122 | API 文档（`docs/api/`） | 所有公开 API 有文档测试 |
 | 123 | 协议规范（`docs/protocol-spec.md`） | 握手/聊天/群聊/时间线的 wire format |
 | 124 | 贡献指南（`CONTRIBUTING.md`） | 开发环境搭建 → PR 流程 |
