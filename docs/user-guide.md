@@ -516,16 +516,53 @@ systemctl --user start agent-circle
 journalctl --user -u agent-circle -f
 ```
 
-### .deb 包（即将支持）
+### .deb 包（Linux/Debian）
 
 ```bash
-dpkg -i agent-circle_0.2.0_amd64.deb
+# 构建
+cargo deb
+
+# 安装
+sudo dpkg -i target/debian/agent-circle_0.1.0-1_amd64.deb
+
+# 启用守护
+systemctl --user enable --now agent-circle
 ```
 
-### Docker（即将支持）
+### .rpm 包（Linux/RHEL）
 
 ```bash
-docker run -v ~/.agent-circle:/root/.agent-circle agent-circle daemon
+# 构建
+python3 packaging/build-rpm.py
+
+# 安装
+sudo rpm -i target/rpm/agent-circle-0.1.0-1.x86_64.rpm
+```
+
+### Homebrew（macOS）
+
+```bash
+brew install tyeclipse/tap/agent-circle
+
+# 自启动
+launchctl load ~/Library/LaunchAgents/com.agent-circle.plist
+```
+
+### Docker
+
+```bash
+# 构建
+docker build -t agent-circle .
+
+# 运行（持久化数据目录）
+docker run -d \
+  --name agent-circle \
+  -v ~/.agent-circle:/data \
+  -p 9099:9099 \
+  agent-circle
+
+# 查看日志
+docker logs -f agent-circle
 ```
 
 ---
