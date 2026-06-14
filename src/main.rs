@@ -3620,3 +3620,67 @@ fn cmd_identity_restore(mnemonic: &str, passphrase: &str) -> errors::AcResult<()
     println!("   短码:       {}", id.short_code);
     Ok(())
 }
+
+// ── S14R145 Markdown renderer unit tests ─────────────────────────
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::render_markdown;
+
+    #[test]
+    fn test_render_bold() {
+        let out = render_markdown("hello **world**!");
+        assert!(out.contains("\x1b[1mworld\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_italic() {
+        let out = render_markdown("hello *world*!");
+        assert!(out.contains("\x1b[3mworld\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_inline_code() {
+        let out = render_markdown("use `cargo build` to compile");
+        assert!(out.contains("\x1b[7mcargo build\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_header() {
+        let out = render_markdown("# Introduction\ncontent");
+        assert!(out.contains("\x1b[1;4m# Introduction\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_unordered_list() {
+        let out = render_markdown("- item one\n- item two");
+        assert!(out.contains("  • item one"));
+        assert!(out.contains("  • item two"));
+    }
+
+    #[test]
+    fn test_render_horizontal_rule() {
+        let out = render_markdown("before\n---\nafter");
+        assert!(out.contains("───"));
+    }
+
+    #[test]
+    fn test_render_plain_text_passthrough() {
+        let input = "hello world, no formatting here.";
+        let out = render_markdown(input);
+        assert!(out.contains("hello world"));
+        assert!(!out.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_render_mixed_content() {
+        let input = "# Title\n\n**bold** and *italic* with `code`\n\n- list item\n\n---\n\nplain";
+        let out = render_markdown(input);
+        assert!(out.contains("\x1b[1;4m"));
+        assert!(out.contains("\x1b[1m"));
+        assert!(out.contains("\x1b[3m"));
+        assert!(out.contains("\x1b[7m"));
+        assert!(out.contains("  •"));
+        assert!(out.contains("plain"));
+    }
+}
