@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S11R111: `agent-circle doctor` 全链路诊断** — 一键检查 identity/storage/network/contacts 四子系统；支持 `-c` 单选检查 + `--json` 输出
 - **S10R109: 服务市场 PoC — `agent-circle service publish`** — 本地发布服务到缓存（`service publish <ID> -n <NAME> -e <ENDPOINT> -d <DESC> -t <TAGS>`）；发布后在 `service list` 可见；daemon 模式下通过 GossipSub 自动广播
 - **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
 - **S10R107: 公众号模式-服务订阅** — `ServiceSubscriptions` 订阅跟踪（`agent-circle-core`）；`agent-circle service subscribe/unsubscribe/subscriptions` CLI（支持 `service@peer` 语法 + `--label`）；`subscriptions.json` 持久化；daemon 自动检测订阅服务更新并记录通知
