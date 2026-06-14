@@ -270,7 +270,7 @@
 | 123 | 协议规范（`docs/protocol-spec.md`） | ✅ 10 章协议文档（握手/聊天/医生/群聊/服务发现/时间线/DHT/安全/扩展） |
 | 124 | 贡献指南（`CONTRIBUTING.md`） | ✅ 环境搭建·规范·PR流程·测试·发布 |
 | 125 | `cargo install agent-circle` 一键装 | ✅ Git 一键安装可用；crates.io 待 core 发布 |
-| 126 | `.deb` 打包（`cargo-deb`） | `dpkg -i agent-circle_0.3.0_amd64.deb` |
+| 126 | `.deb` 打包（`cargo-deb`） | ✅ 4.4 MB amd64 — binary + systemd unit |
 | 127 | `.rpm` 打包（`cargo-rpm`） | `rpm -i agent-circle-0.3.0.x86_64.rpm` |
 | 128 | Homebrew formula | `brew install tyeclipse/tap/agent-circle` |
 | 129 | Docker 镜像 | `docker run agent-circle daemon` |
