@@ -7,6 +7,7 @@ mod control;
 mod dedup;
 mod diag;
 mod errors;
+mod health;
 mod identity;
 mod keys;
 mod message_queue;
@@ -634,6 +635,13 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
     }
 
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+
+    // S11R117 — Start health/metrics HTTP server on 127.0.0.1:9099
+    match health::spawn(data_dir.clone(), id.short_code.clone()).await {
+        Ok(addr) => tracing::info!(%addr, "🏥 健康检查端点已启动"),
+        Err(e) => tracing::warn!(%e, "健康检查端点启动失败 (端口可能被占用)"),
+    }
+
     network::run_daemon(&id, groups, relay_mode, &data_dir).await
 }
 
@@ -2292,13 +2300,13 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
 
     // ── Network check ───────────────────────────────────────────
     if should_run("network") {
-        let sock = data_dir.join("control.sock");
-        let sock_exists = sock.exists();
+        let port = data_dir.join("control.port");
+        let port_exists = port.exists();
         let registry = service_discovery::load_registry(&data_dir).unwrap_or_default();
         let peer_count = registry.peer_count();
         let svc_count = registry.service_count();
 
-        if sock_exists {
+        if port_exists {
             let detail = if peer_count > 0 {
                 let peers = registry.all_services_with_meta();
                 let mut peer_set: Vec<String> = Vec::new();
