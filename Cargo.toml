@@ -75,6 +75,7 @@ time = "=0.3.47"
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"
 
 # ── Debian packaging ──
 [package.metadata.deb]
