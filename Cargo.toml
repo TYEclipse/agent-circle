@@ -66,6 +66,10 @@ libp2p-request-response = { version = "0.28", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 
+# ── TUI (ratatui) ──
+ratatui = "0.29"
+crossterm = "0.28"
+
 # Pin time to avoid rcgen blanket-impl conflict and RUSTSEC-2026-0009
 time = "=0.3.47"
 

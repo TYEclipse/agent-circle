@@ -22,6 +22,7 @@ mod sequence;
 mod service_discovery;
 mod storage;
 mod timeline;
+mod tui;
 
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
@@ -112,6 +113,9 @@ enum Commands {
 
     /// 性能指标暴露 — OpenMetrics/Prometheus 格式 (S11R116)
     Metrics,
+
+    /// 全屏终端界面 — TUI (S15R151)
+    Tui,
 }
 
 #[derive(Subcommand)]
@@ -599,6 +603,7 @@ async fn run() -> errors::AcResult<()> {
             }
         }
         Commands::Metrics => cmd_metrics()?,
+        Commands::Tui => tui::run()?,
     }
 
     Ok(())
