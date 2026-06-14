@@ -41,6 +41,7 @@ dependencies = [
 name = "agent-circle"
 version = "0.1.0"
 dependencies = [
+ "agent-circle-core",
  "bip39",
  "blake3",
  "bs58",
@@ -61,6 +62,24 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
+]
+
+[[package]]
+name = "agent-circle-core"
+version = "0.1.0"
+dependencies = [
+ "bip39",
+ "blake3",
+ "bs58",
+ "chrono",
+ "ed25519-dalek",
+ "hex",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
  "zeroize",
 ]
 

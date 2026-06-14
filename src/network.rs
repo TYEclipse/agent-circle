@@ -29,8 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
-/// DHT key for relay node discovery. Relay nodes publish their addresses under this record key.
-const RELAY_DHT_KEY: &str = "/agent-circle/relays/0.1.0";
+use crate::protocol;
 
 pub type ChatBehaviour = request_response::json::Behaviour<ChatRequest, ChatResponse>;
 
@@ -64,13 +63,14 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
             let mdns =
                 mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id).expect("mDNS");
             let identify = identify::Behaviour::new(
-                identify::Config::new("/agent-circle/0.1.0".to_string(), libp2p_keypair.public())
+                identify::Config::new(protocol::identify_agent(), libp2p_keypair.public())
                     .with_agent_version(format!("agent-circle/{}", env!("CARGO_PKG_VERSION"))),
             );
             let dcutr = dcutr::Behaviour::new(local_peer_id);
             let chat = ChatBehaviour::new(
                 [(
-                    StreamProtocol::new("/agent-circle/chat/0.1.0"),
+                    StreamProtocol::try_from_owned(protocol::chat_protocol())
+                        .expect("valid chat protocol"),
                     request_response::ProtocolSupport::Full,
                 )],
                 request_response::Config::default(),
@@ -148,7 +148,7 @@ pub fn group_topic(name: &str) -> gossipsub::IdentTopic {
     let mut hasher = DefaultHasher::new();
     name.hash(&mut hasher);
     let hash = hasher.finish();
-    gossipsub::IdentTopic::new(format!("agent-circle/group/{hash:x}"))
+    gossipsub::IdentTopic::new(format!("{}/{hash:x}", protocol::group_topic_prefix()))
 }
 
 /// Join a group topic. Call this before sending/receiving group messages.
@@ -561,7 +561,7 @@ pub async fn run_daemon(
                 },
             )) => {
                 let key_str = std::str::from_utf8(record.record.key.as_ref()).unwrap_or("?");
-                if key_str == RELAY_DHT_KEY {
+                if key_str == protocol::relay_dht_key() {
                     let addrs = String::from_utf8_lossy(&record.record.value);
                     info!(relay_addrs = %addrs, "🔗 DHT 发现 relay 节点");
                     // Parse relay address and dial
@@ -646,7 +646,7 @@ pub async fn run_daemon(
 
         // After bootstrap, register or discover relay nodes via DHT
         if bootstrapped && !relay_registered_or_discovered {
-            let relay_key = RecordKey::new(&RELAY_DHT_KEY);
+            let relay_key = RecordKey::new(&protocol::relay_dht_key());
             if relay_mode {
                 // Publish relay address to DHT so other nodes can discover us
                 let addrs: Vec<String> = swarm

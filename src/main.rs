@@ -11,6 +11,7 @@ mod identity;
 mod keys;
 mod message_queue;
 mod network;
+mod protocol;
 mod reliability;
 mod sequence;
 mod storage;
