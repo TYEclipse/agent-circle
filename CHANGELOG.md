@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### S13 · 公众号 (Agent 服务发布) 🔄
 
+- **S13R138: 服务市场 TUI `service browse`** — 交互式终端浏览器 (零新依赖: stty raw + ANSI)；光标导航↑↓/jk；实时评级+新鲜度；Enter查看详情；PgUp/Dn翻页；esc/q退出
 - **S13R137: 服务评级 `service rate`** — `service rate <svc> <1-5> [-c comment]` 打分+评论；`Rating`/`RatingSummary` 数据模型 + `stars_display()` 星级格式化；`add_rating` upsert 存储；`service history`/`service view` 自动显示评分摘要
 - **S13R136: Markdown 渲染 `service view`** — `service view <svc> <version>` 全文查看；`render_markdown()` Markdown→ANSI (bold/italic/code/header/list/hr)；长行自动换行；Ed25519 签名校验展示
 - **S13R135: 推送消息 — GossipSub 出版物广播** — `publications_topic()` GossipSub 频道；daemon 启动时自动订阅；`handle_publication_message` 路由入站推送到 `notifications.json`；`publish_publication` 广播端点供 daemon 使用

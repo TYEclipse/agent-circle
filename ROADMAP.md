@@ -291,7 +291,7 @@
 | 135 | 推送消息（服务 → 订阅者广播） | ✅ GossipSub 出版物推送 + daemon 订阅 + 自动通知 |
 | 136 | 消息格式（Markdown 支持） | ✅ service view + render_markdown (ANSI: bold/italic/code/header/list/hr) |
 | 137 | 服务评级/评论 | ✅ service rate + Rating/RatingSummary + stars_display + 集成到 history/view |
-| 138 | 服务市场 TUI | `agent-circle service browse` 交互式浏览 |
+| 138 | 服务市场 TUI | ✅ service browse — 交互式 TUI (↑↓/jk 导航, Enter 详情, 评级+发布历史实时显示) |
 | 139 | 公众号权限模型 | 公开 / 需审批 / 白名单 |
 | 140 | S13 回顾 | Sprint 回顾文档 |
 
