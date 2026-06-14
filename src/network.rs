@@ -4,13 +4,16 @@
 //! Discovery: mDNS (LAN) + Kademlia DHT (WAN)
 //! Chat: request/response (1-to-1) + GossipSub (group)
 //! Relay: enables NAT traversal when DCUtR hole-punching fails
+//! Relay discovery: relay nodes broadcast their address via DHT
 
 use crate::chat::{ChatRequest, ChatResponse};
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use futures::StreamExt;
 use libp2p::{
-    dcutr, gossipsub, identify, kad, mdns, relay,
+    dcutr, gossipsub, identify, kad,
+    kad::{Record, RecordKey},
+    mdns, relay,
     request_response::{self, Message},
     swarm::{NetworkBehaviour, SwarmEvent},
     yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
@@ -19,6 +22,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
 use tracing::{debug, info, warn};
+
+/// DHT key for relay node discovery. Relay nodes publish their addresses under this record key.
+const RELAY_DHT_KEY: &str = "/agent-circle/relays/0.1.0";
 
 pub type ChatBehaviour = request_response::json::Behaviour<ChatRequest, ChatResponse>;
 
@@ -184,7 +190,7 @@ fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypai
 
 // ── Daemon ─────────────────────────────────────────────────────────
 
-pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
+pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool) -> AcResult<()> {
     let mut swarm = build_swarm(id)?;
     let local_peer_id = *swarm.local_peer_id();
 
@@ -196,9 +202,10 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
     }
 
     info!("Agent Circle 守护进程已启动");
-    info!(peer_id = %local_peer_id, "PeerId");
+    info!(peer_id = %local_peer_id, relay_mode = relay_mode, "PeerId");
 
     let mut bootstrapped = false;
+    let mut relay_registered_or_discovered = false;
 
     loop {
         match swarm.select_next_some().await {
@@ -296,6 +303,36 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
                 }
             }
 
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(
+                kad::Event::OutboundQueryProgressed {
+                    result: kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(record))),
+                    ..
+                },
+            )) => {
+                let key_str = std::str::from_utf8(record.record.key.as_ref()).unwrap_or("?");
+                if key_str == RELAY_DHT_KEY {
+                    let addrs = String::from_utf8_lossy(&record.record.value);
+                    info!(relay_addrs = %addrs, "🔗 DHT 发现 relay 节点");
+                    // Parse relay address and dial
+                    for addr_str in addrs.split(',') {
+                        if let Ok(addr) = addr_str.parse::<libp2p::Multiaddr>() {
+                            info!(relay = %addr_str, "拨号 relay 节点");
+                            let _ = swarm.dial(addr);
+                        }
+                    }
+                }
+            }
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(
+                kad::Event::OutboundQueryProgressed {
+                    result:
+                        kad::QueryResult::GetRecord(Ok(
+                            kad::GetRecordOk::FinishedWithNoAdditionalRecord { .. },
+                        )),
+                    ..
+                },
+            )) => {
+                info!("DHT 未发现 relay 节点（网络中尚无 relay 在线）");
+            }
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(_)) => {}
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Dcutr(event)) => {
                 debug!(?event, "DCUtR");
@@ -325,6 +362,36 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
             } else {
                 info!("Kademlia DHT bootstrap 已启动");
                 bootstrapped = true;
+            }
+        }
+
+        // After bootstrap, register or discover relay nodes via DHT
+        if bootstrapped && !relay_registered_or_discovered {
+            let relay_key = RecordKey::new(&RELAY_DHT_KEY);
+            if relay_mode {
+                // Publish relay address to DHT so other nodes can discover us
+                let addrs: Vec<String> = swarm
+                    .listeners()
+                    .chain(swarm.external_addresses())
+                    .map(|a| a.to_string())
+                    .collect();
+                if !addrs.is_empty() {
+                    let value = addrs.join(",");
+                    if let Err(e) = swarm.behaviour_mut().kademlia.put_record(
+                        Record::new(relay_key, value.into_bytes()),
+                        libp2p::kad::Quorum::One,
+                    ) {
+                        warn!(error = %e, "DHT relay 注册失败");
+                    } else {
+                        info!(addrs = %addrs.join(" "), "🔁 DHT relay 地址已注册");
+                        relay_registered_or_discovered = true;
+                    }
+                }
+            } else {
+                // Query DHT to discover relay nodes
+                info!("🔍 查询 DHT 发现 relay 节点...");
+                swarm.behaviour_mut().kademlia.get_record(relay_key);
+                relay_registered_or_discovered = true;
             }
         }
     }
