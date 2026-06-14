@@ -106,6 +106,17 @@ enum ChatCmd {
         #[arg(long, default_value = "30")]
         timeout: u64,
     },
+    /// 压力测试 — 发送 N 条消息并统计投递率
+    PressureTest {
+        /// 目标 PeerId
+        peer_id: String,
+        /// 消息数量 (默认 100)
+        #[arg(long, default_value = "100")]
+        count: usize,
+        /// 每条消息等待 ACK 的超时秒数 (默认 5s)
+        #[arg(long, default_value = "5")]
+        timeout: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -267,6 +278,11 @@ async fn run() -> errors::AcResult<()> {
                     cmd_chat_send(&peer_id, &message.join(" ")).await?
                 }
             }
+            ChatCmd::PressureTest {
+                peer_id,
+                count,
+                timeout,
+            } => cmd_chat_pressure_test(&peer_id, count, timeout).await?,
         },
         Commands::Group(cmd) => match cmd {
             GroupCmd::Create { name } => cmd_group_create(&name)?,
@@ -582,6 +598,157 @@ async fn cmd_chat_send_track(
             }
         }
     }
+}
+
+async fn cmd_chat_pressure_test(
+    peer_id_str: &str,
+    count: usize,
+    timeout_secs: u64,
+) -> errors::AcResult<()> {
+    use libp2p::request_response::{self, Message};
+    use libp2p::swarm::SwarmEvent;
+    use libp2p::PeerId;
+    use std::str::FromStr;
+    use std::time::Instant;
+
+    let peer_id = PeerId::from_str(peer_id_str)
+        .map_err(|e| errors::AcError::Network(format!("无效 PeerId: {e}")))?;
+
+    let id = match storage::load_identity(data_dir_opt())? {
+        Some(id) => id,
+        None => {
+            eprintln!("⚠️  未找到身份，请先创建。");
+            std::process::exit(1);
+        }
+    };
+
+    let mut swarm = network::build_swarm(&id)?;
+    let my_did = id.did.clone();
+
+    // ── Connect ──────────────────────────────────────────────────
+    println!("📡 正在连接 {peer_id}...");
+    for _ in 0..8 {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::select! {
+            _ = swarm.select_next_some() => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+        if swarm.is_connected(&peer_id) {
+            break;
+        }
+    }
+    swarm
+        .dial(peer_id)
+        .map_err(|e| errors::AcError::Network(format!("dial 失败: {e}")))?;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    println!("🔫 压力测试 — {count} 条消息, 每条约 {timeout_secs}s 超时");
+
+    let mut delivered: usize = 0;
+    let mut failed: usize = 0;
+    let mut timeout_expired: usize = 0;
+    let total_start = Instant::now();
+
+    for i in 1..=count {
+        // Send
+        let msg =
+            format!("pressure-test #{i}: 这是一条压力测试消息，用于验证 P2P 消息投递可靠性。");
+        let request_id = network::send_chat(&mut swarm, peer_id, &my_did, &msg);
+        let sent_at = Instant::now();
+        let deadline = Instant::now() + std::time::Duration::from_secs(timeout_secs);
+
+        // Wait for ACK or failure
+        let mut acked = false;
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                timeout_expired += 1;
+                print!("⏰");
+                break;
+            }
+            let remaining = deadline - now;
+            tokio::select! {
+                event = swarm.select_next_some() => {
+                    match event {
+                        SwarmEvent::Behaviour(network::AgentCircleBehaviourEvent::Chat(
+                            request_response::Event::Message {
+                                message: Message::Response { request_id: rid, .. },
+                                ..
+                            }
+                        )) if rid == request_id => {
+                            delivered += 1;
+                            acked = true;
+                            let ms = sent_at.elapsed().as_millis();
+                            if count <= 20 || i % 10 == 0 {
+                                print!(" #{i}:{ms}ms ✓");
+                            }
+                            break;
+                        }
+                        SwarmEvent::Behaviour(network::AgentCircleBehaviourEvent::Chat(
+                            request_response::Event::OutboundFailure {
+                                request_id: rid,
+                                ..
+                            }
+                        )) if rid == request_id => {
+                            failed += 1;
+                            acked = true;
+                            print!("✗");
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                _ = tokio::time::sleep(remaining) => {
+                    timeout_expired += 1;
+                    print!("⏰");
+                    acked = true;
+                    break;
+                }
+            }
+        }
+        if !acked {
+            timeout_expired += 1;
+        }
+
+        // Progress dot for large counts
+        if count > 20 && i % 10 == 0 {
+            println!();
+        }
+    }
+    println!();
+
+    let elapsed = total_start.elapsed();
+    let total = delivered + failed + timeout_expired;
+    let rate = if total > 0 {
+        (delivered as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    println!();
+    println!("══════════════════════════════════════");
+    println!("  压力测试结果");
+    println!("══════════════════════════════════════");
+    println!("  消息总数:    {count}");
+    println!("  ✅ 已送达:    {delivered} ({:.1}%)", rate);
+    println!("  ❌ 失败:      {failed}");
+    println!("  ⏰ 待确认:    {timeout_expired}");
+    println!("  总耗时:       {:.1}s", elapsed.as_secs_f64());
+    println!(
+        "  吞吐量:       {:.1} msg/s",
+        total as f64 / elapsed.as_secs_f64().max(0.001)
+    );
+    println!("══════════════════════════════════════");
+
+    if rate >= 99.9 {
+        println!("🎯 99.9% 投递率达成！");
+    } else if rate >= 99.0 {
+        println!("⚠️  未达 99.9%，可尝试增加 --count 或调整网络");
+    } else {
+        println!("❌ 投递率较低，检查网络和对方 daemon 是否运行");
+    }
+
+    Ok(())
 }
 
 // ── Contact commands ───────────────────────────────────────────────
