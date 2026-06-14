@@ -15,7 +15,7 @@ use crate::identity::ServiceInfo;
 use libp2p::{gossipsub, PeerId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// A service announcement broadcast over GossipSub.
 ///
@@ -382,4 +382,59 @@ pub fn load_subscriptions(data_dir: &std::path::Path) -> AcResult<ServiceSubscri
     let json = std::fs::read_to_string(&path).map_err(AcError::Io)?;
     let subs: ServiceSubscriptions = serde_json::from_str(&json).map_err(AcError::Serialization)?;
     Ok(subs)
+}
+
+// ── Publication push via GossipSub (S13R135) ─────────────────────
+
+/// Broadcast a publication to all network subscribers via GossipSub.
+/// The caller should save the publication locally first; this function
+/// handles the network broadcast to the publications topic.
+#[allow(dead_code)] // called from daemon dispatch path (not CLI)
+pub fn publish_publication(
+    swarm: &mut libp2p::Swarm<crate::network::AgentCircleBehaviour>,
+    publication: &agent_circle_core::publication::Publication,
+) -> AcResult<()> {
+    let topic = gossipsub::IdentTopic::new(crate::protocol::publications_topic());
+    let data = serde_json::to_vec(publication)?;
+    swarm
+        .behaviour_mut()
+        .gossip
+        .publish(topic, data)
+        .map_err(|e| AcError::Network(format!("publication push failed: {e}")))?;
+    info!(
+        service_id = %publication.service_id,
+        version = publication.version,
+        title = %publication.title,
+        "📡 公众号推送已广播 (GossipSub)"
+    );
+    Ok(())
+}
+
+/// Handle an incoming GossipSub publication message.
+/// If the user is subscribed to the service, stores a notification.
+pub fn handle_publication_message(
+    data: &[u8],
+    subs: &ServiceSubscriptions,
+    data_dir: &std::path::Path,
+) {
+    match serde_json::from_slice::<agent_circle_core::publication::Publication>(data) {
+        Ok(pub_msg) => {
+            if subs.is_subscribed(&pub_msg.service_id, None) {
+                info!(
+                    service_id = %pub_msg.service_id,
+                    version = pub_msg.version,
+                    title = %pub_msg.title,
+                    "🔔 收到订阅服务推送"
+                );
+                if let Err(e) =
+                    crate::storage::notify_subscriber(data_dir, &pub_msg.service_id, &pub_msg.id)
+                {
+                    warn!(error = %e, "存储推送通知失败");
+                }
+            }
+        }
+        Err(_e) => {
+            // Not a publication message — silently skip (could be other GossipSub data)
+        }
+    }
 }

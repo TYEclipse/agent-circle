@@ -56,6 +56,12 @@ pub fn services_topic() -> String {
     format!("agent-circle/services/{VERSION}")
 }
 
+/// GossipSub topic for publication push (公众号推送).
+/// Services publish new articles here; subscribers listen for updates.
+pub fn publications_topic() -> String {
+    format!("agent-circle/publications/{VERSION}")
+}
+
 /// Remote diagnostics request-response protocol (S11R119).
 pub fn doctor_protocol() -> String {
     format!("/agent-circle/doctor/{VERSION}")

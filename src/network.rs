@@ -385,6 +385,17 @@ pub async fn run_daemon(
     // S10R102 — Subscribe to service discovery channel
     service_discovery::subscribe_services(&mut swarm)?;
 
+    // S13R135 — Subscribe to publication push channel (公众号推送)
+    {
+        let pub_topic = gossipsub::IdentTopic::new(crate::protocol::publications_topic());
+        swarm
+            .behaviour_mut()
+            .gossip
+            .subscribe(&pub_topic)
+            .map_err(|e| AcError::Network(format!("publications subscribe failed: {e}")))?;
+        info!(topic = %pub_topic, "已订阅公众号推送频道");
+    }
+
     info!("Agent Circle 守护进程已启动");
     info!(peer_id = %local_peer_id, relay_mode = relay_mode, "PeerId");
 
@@ -742,6 +753,13 @@ pub async fn run_daemon(
                         &mut service_registry,
                         data_dir,
                         Some(&mut service_subs),
+                    );
+                // S13R135 — Route publication push to notification handler
+                } else if topic_str == crate::protocol::publications_topic() {
+                    service_discovery::handle_publication_message(
+                        &message.data,
+                        &service_subs,
+                        data_dir,
                     );
                 } else {
                     match serde_json::from_slice::<serde_json::Value>(&message.data) {
