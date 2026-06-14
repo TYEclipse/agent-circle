@@ -7,6 +7,7 @@ mod dedup;
 mod diag;
 mod errors;
 mod identity;
+mod keys;
 mod message_queue;
 mod network;
 mod reliability;
@@ -195,6 +196,16 @@ enum IdentityCmd {
     Show,
     /// 导出身份种子（备份用 — 慎用！）
     Export,
+    /// 从 BIP-39 助记词恢复身份
+    Restore {
+        /// 12 个助记词（用引号包裹，空格分隔）
+        mnemonic: String,
+        /// 可选的密码短语 (BIP-39 passphrase)
+        #[arg(short, long, default_value = "")]
+        passphrase: String,
+    },
+    /// 生成新的 BIP-39 助记词（用于备份）
+    Mnemonic,
 }
 
 #[derive(Subcommand)]
@@ -262,6 +273,11 @@ async fn run() -> errors::AcResult<()> {
             } => cmd_identity_create(&name, &owner, &model, &capabilities)?,
             IdentityCmd::Show => cmd_identity_show()?,
             IdentityCmd::Export => cmd_identity_export()?,
+            IdentityCmd::Restore {
+                mnemonic,
+                passphrase,
+            } => cmd_identity_restore(&mnemonic, &passphrase)?,
+            IdentityCmd::Mnemonic => cmd_identity_mnemonic()?,
         },
         Commands::Daemon { cmd } => match cmd {
             DaemonCmd::Start { group, relay } => cmd_daemon_start(&group, relay).await?,
@@ -1218,5 +1234,28 @@ fn cmd_diag_clean() -> errors::AcResult<()> {
         Ok(n) => println!("🧹 已清理 {} 条已送达记录", n),
         Err(e) => eprintln!("❌ 已送达清理失败: {e}"),
     }
+    Ok(())
+}
+
+// ── BIP-39 Mnemonic commands ──────────────────────────────────────
+
+fn cmd_identity_mnemonic() -> errors::AcResult<()> {
+    let mnemonic = keys::generate_mnemonic()?;
+    println!("🔑 BIP-39 助记词（请安全保存！）\n");
+    println!("   {}\n", mnemonic);
+    println!("⚠️  用以下命令恢复身份：");
+    println!("   agent-circle identity restore \"{}\"\n", mnemonic);
+    println!("   丢失助记词 = 永久失去身份控制权。请离线保存。");
+    Ok(())
+}
+
+fn cmd_identity_restore(mnemonic: &str, passphrase: &str) -> errors::AcResult<()> {
+    // Validate mnemonic before deriving
+    keys::validate_mnemonic(mnemonic).map_err(errors::AcError::Identity)?;
+    let id = keys::derive_from_mnemonic(mnemonic, passphrase)?;
+    save_identity(&id, data_dir_opt())?;
+    println!("✅ 身份已从助记词恢复");
+    println!("   DID:        {}", id.did);
+    println!("   短码:       {}", id.short_code);
     Ok(())
 }

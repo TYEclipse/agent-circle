@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S06R61–R66: 供应链审计 + BIP-39 密钥** — `SUPPLY_CHAIN.md` 依赖审计（807 transitive，3 vuln豁免）；`src/keys.rs` BIP-39 助记词派生+验证（12词，PBKDF2→Ed25519），`identity mnemonic` / `identity restore` CLI；5个keys测试（含已知测试向量）
 - **S05R51–R59: 安全审计** — `SECURITY_AUDIT.md`：E2E加密/密钥存储/内存安全/时序攻击/消息签名/重放防护全面审计；综合评分 87.5%；R57 连接限制已实现 (`memory-connection-limits`，流入50/流出50/待定10)
 - **S04R50: S04 回顾文档** — `S04_RETROSPECTIVE.md`：fuzz+混沌总览、测试数据、经验教训、S05 准备
 - **S04R47–R49: 混沌工程测试** — `tests/chaos.rs`：6 个混沌测试 (崩溃恢复持久化 + 部分交付恢复 + 网络分区离线队列 + 消息洪峰 200 条 + 洪峰半排半留)；验证 Queue SQLite 持久化在 crash/partition/flood 下不丢消息

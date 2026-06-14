@@ -19,6 +19,7 @@ zeroize = { version = "1", features = ["derive"] }
 thiserror = "2"
 dirs = "6"
 hex = "0.4"
+bip39 = "2"
 
 # Structured logging
 tracing = "0.1"
