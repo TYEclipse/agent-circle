@@ -109,6 +109,7 @@ mod tests {
             msg_id: seq, // reuse seq as msg_id for test simplicity
             ttl: 9999999999,
             seq,
+            service: None,
         }
     }
 

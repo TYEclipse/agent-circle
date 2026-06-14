@@ -21,6 +21,22 @@ pub struct ChatRequest {
     /// Monotonic sequence number per sender, used for ordering.
     /// Resets on daemon restart; receiver resets on connection establish.
     pub seq: u64,
+    /// S10R104 — Optional service invocation: when set, this is a call
+    /// to a remote service rather than a human chat message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<ServiceCall>,
+}
+
+/// S10R104 — A service invocation payload attached to a ChatRequest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceCall {
+    /// The service identifier (e.g. "weather-v1").
+    pub service_id: String,
+    /// The method to call on the service (e.g. "forecast").
+    pub method: String,
+    /// Arbitrary JSON parameters for the call.
+    #[serde(default)]
+    pub params: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +95,7 @@ mod tests {
             msg_id: 42,
             ttl: 1718604800,
             seq: 7,
+            service: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: ChatRequest = serde_json::from_str(&json).unwrap();
@@ -115,6 +132,7 @@ mod tests {
             msg_id: 2,
             ttl: 3,
             seq: 4,
+            service: None,
         };
         let debug = format!("{req:?}");
         assert!(debug.contains("alice"));
@@ -132,6 +150,7 @@ mod tests {
             msg_id: 1,
             ttl: 2,
             seq: 3,
+            service: None,
         };
         let cloned = req.clone();
         assert_eq!(cloned.from, req.from);
@@ -150,6 +169,7 @@ mod tests {
             msg_id: 0,
             ttl: 0,
             seq: 0,
+            service: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: ChatRequest = serde_json::from_str(&json).unwrap();

@@ -104,6 +104,19 @@ enum ServiceCmd {
         /// 搜索关键词
         query: String,
     },
+    /// 调用远程服务
+    Call {
+        /// 目标 PeerId
+        peer_id: String,
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 方法名 (如 "forecast")
+        #[arg(default_value = "default")]
+        method: String,
+        /// JSON 参数
+        #[arg(default_value = "{}")]
+        params: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -367,6 +380,12 @@ async fn run() -> errors::AcResult<()> {
         Commands::Service(cmd) => match cmd {
             ServiceCmd::List => cmd_service_list()?,
             ServiceCmd::Search { query } => cmd_service_search(&query)?,
+            ServiceCmd::Call {
+                peer_id,
+                service_id,
+                method,
+                params,
+            } => cmd_service_call(&peer_id, &service_id, &method, &params)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -1556,6 +1575,28 @@ fn cmd_service_search(query: &str) -> errors::AcResult<()> {
             );
         }
     }
+    Ok(())
+}
+
+fn cmd_service_call(
+    peer_id: &str,
+    service_id: &str,
+    method: &str,
+    params_json: &str,
+) -> errors::AcResult<()> {
+    let params: serde_json::Value =
+        serde_json::from_str(params_json).map_err(|e| errors::AcError::Serialization(e))?;
+    // Format as a "service call" message via the chat protocol
+    let msg = serde_json::json!({
+        "type": "service-call",
+        "service_id": service_id,
+        "method": method,
+        "params": params,
+    });
+    let content = serde_json::to_string(&msg)?;
+    println!("📡 调用 {}::{} → Peer {}", service_id, method, peer_id);
+    println!("   参数: {}", content);
+    println!("   提示: 在 daemon 模式下，此消息将作为 ChatRequest.service 字段发送");
     Ok(())
 }
 
