@@ -1,0 +1,10 @@
+[package]
+name = "agent-circle-plugin"
+version.workspace = true
+edition.workspace = true
+description = "SDK for building Agent Circle plugins — re-exports core traits + macros"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+agent-circle-core = { path = "../agent-circle-core" }

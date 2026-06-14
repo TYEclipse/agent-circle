@@ -1,5 +1,5 @@
 [workspace]
-members = ["agent-circle-core"]
+members = ["agent-circle-core", "agent-circle-plugin", "plugins/hello-world"]
 resolver = "2"
 
 [workspace.package]
