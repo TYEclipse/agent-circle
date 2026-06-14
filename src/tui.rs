@@ -3,6 +3,7 @@
 //! Powered by ratatui + crossterm. Press `q` to quit, Esc to go back.
 
 use crate::storage;
+use crate::timeline::Timeline;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
@@ -24,6 +25,8 @@ enum View {
     Contacts,
     /// Chat with the contact at the given index.
     Chat(usize),
+    /// Timeline / 朋友圈 view.
+    Timeline,
 }
 
 /// A chat message bubble.
@@ -51,6 +54,10 @@ pub struct App {
     messages: Vec<ChatMessage>,
     /// Scroll offset for messages list (0 = most recent at bottom).
     scroll_offset: usize,
+    /// Loaded timeline data.
+    timeline: Timeline,
+    /// Scroll offset for timeline view.
+    timeline_scroll: usize,
     /// Whether the user has exited.
     should_quit: bool,
 }
@@ -58,6 +65,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let contacts = load_contacts();
+        let timeline = load_timeline();
         Self {
             menu_index: 0,
             view: View::Home,
@@ -66,6 +74,8 @@ impl App {
             input: String::new(),
             messages: Vec::new(),
             scroll_offset: 0,
+            timeline,
+            timeline_scroll: 0,
             should_quit: false,
         }
     }
@@ -114,6 +124,11 @@ impl App {
                     self.scroll_offset += 1;
                 }
             }
+            View::Timeline => {
+                if self.timeline_scroll + 1 < self.timeline.nodes.len() {
+                    self.timeline_scroll += 1;
+                }
+            }
         }
     }
 
@@ -138,6 +153,11 @@ impl App {
                     self.scroll_offset -= 1;
                 }
             }
+            View::Timeline => {
+                if self.timeline_scroll > 0 {
+                    self.timeline_scroll -= 1;
+                }
+            }
         }
     }
 }
@@ -147,6 +167,14 @@ fn load_contacts() -> Vec<storage::Contact> {
     match storage::resolve_data_dir(None) {
         Ok(dir) => storage::load_contacts(Some(&dir)).unwrap_or_default(),
         Err(_) => Vec::new(),
+    }
+}
+
+/// Load timeline from storage. Returns empty timeline on any error.
+fn load_timeline() -> Timeline {
+    match storage::resolve_data_dir(None) {
+        Ok(dir) => storage::load_timeline(Some(&dir)).unwrap_or_else(|_| Timeline::new()),
+        Err(_) => Timeline::new(),
     }
 }
 
@@ -209,6 +237,11 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.contact_index = 0;
                             app.contacts = load_contacts();
                         }
+                        3 => {
+                            app.view = View::Timeline;
+                            app.timeline_scroll = 0;
+                            app.timeline = load_timeline();
+                        }
                         _ => {}
                     },
                     _ => {}
@@ -244,6 +277,14 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Backspace => {
                         app.input.pop();
                     }
+                    _ => {}
+                },
+                View::Timeline => match key.code {
+                    KeyCode::Esc => {
+                        app.view = View::Home;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                    KeyCode::Down | KeyCode::Char('j') => app.next(0),
                     _ => {}
                 },
             }
@@ -324,6 +365,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         View::Home => render_home(f, body_chunks[1]),
         View::Contacts => render_contacts(f, body_chunks[1], app),
         View::Chat(idx) => render_chat(f, body_chunks[1], app, *idx),
+        View::Timeline => render_timeline(f, body_chunks[1], app),
     }
 
     // ── Footer ──
@@ -331,6 +373,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         View::Home => "j/k ↑↓ 导航  |  Enter 进入  |  q 退出",
         View::Contacts => "j/k ↑↓ 选人  |  Enter 进入聊天  |  Esc 返回",
         View::Chat(_) => "输入消息  |  Enter 发送  |  Esc 返回",
+        View::Timeline => "j/k ↑↓ 滚动  |  Esc 返回",
     };
     let footer_text = vec![Line::from(Span::styled(
         format!(
@@ -559,6 +602,81 @@ fn render_chat(f: &mut Frame, area: Rect, app: &App, contact_idx: usize) {
         .block(Block::default().borders(Borders::ALL).title(" 输入 "))
         .wrap(Wrap { trim: false });
     f.render_widget(input_widget, chat_chunks[2]);
+}
+
+fn render_timeline(f: &mut Frame, area: Rect, app: &App) {
+    if app.timeline.nodes.is_empty() {
+        let empty_text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  📰 暂无朋友圈动态",
+                Style::default().fg(Color::Yellow),
+            )),
+            Line::from(""),
+            Line::from("  使用 CLI 发布朋友圈："),
+            Line::from(Span::styled(
+                "    agent-circle timeline post <content>",
+                Style::default().fg(Color::Cyan),
+            )),
+        ];
+        let empty = Paragraph::new(Text::from(empty_text))
+            .block(Block::default().borders(Borders::ALL).title(" 朋友圈 "))
+            .wrap(Wrap { trim: false });
+        f.render_widget(empty, area);
+        return;
+    }
+
+    let visible = (area.height as usize).saturating_sub(2);
+    let posts: Vec<Line> = app
+        .timeline
+        .nodes
+        .iter()
+        .rev()
+        .skip(app.timeline_scroll)
+        .take(visible)
+        .map(|node| {
+            let ts_str = chrono::DateTime::from_timestamp(node.ts, 0)
+                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let author_short = if node.author.len() > 12 {
+                format!("{}...", &node.author[..12])
+            } else {
+                node.author.clone()
+            };
+            let content = if node.content.len() > 60 {
+                format!("{}...", &node.content[..60])
+            } else {
+                node.content.clone()
+            };
+            Line::from(vec![
+                Span::styled(
+                    format!("[{}] ", ts_str),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("{}", author_short),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::raw(": "),
+                Span::styled(content, Style::default()),
+            ])
+        })
+        .collect();
+
+    let title = if app.timeline_scroll > 0 {
+        format!(
+            " 朋友圈 ({} 条, 已上滚 {}) ",
+            app.timeline.nodes.len(),
+            app.timeline_scroll
+        )
+    } else {
+        format!(" 朋友圈 ({} 条) ", app.timeline.nodes.len())
+    };
+
+    let timeline_widget = Paragraph::new(Text::from(posts))
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .wrap(Wrap { trim: false });
+    f.render_widget(timeline_widget, area);
 }
 
 #[cfg(test)]
