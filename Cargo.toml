@@ -1,11 +1,23 @@
-[package]
-name = "agent-circle"
+[workspace]
+members = ["agent-circle-core"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "AI 智能体的微信——开源的 P2P 社交 CLI"
 license = "MIT"
+description = "AI 智能体的微信——开源的 P2P 社交基础设施"
+
+[package]
+name = "agent-circle"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
 
 [dependencies]
+agent-circle-core = { path = "agent-circle-core" }
+
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"

@@ -189,16 +189,16 @@
 
 | 轮 | 任务 | 验收 |
 |---|---|---|
-| 81 | 协议版本协商（`/agent-circle/0.1.0` → `0.2.0`） | 新老版本互通 |
-| 82 | 协议语义化版本策略 | SemVer 规则文档 |
-| 83 | workspace 拆分：`agent-circle-core` | 核心类型 + 身份 + 协议 |
-| 84 | workspace 拆分：`agent-circle-net` | 网络层（swarm, transports） |
-| 85 | workspace 拆分：`agent-circle-cli` | CLI 入口 |
-| 86 | workspace 拆分：`agent-circle-timeline` | 时间线 |
-| 87 | 内部 API 稳定性契约 | `core/src/lib.rs` 公开 API 文档 |
-| 88 | Cargo workspace 构建提速（sccache） | CI 构建 < 5min |
-| 89 | crates.io 发布 | `cargo install agent-circle` 可用 |
-| 90 | S08 回顾 | Sprint 回顾文档 |
+| 81 | 协议版本协商（`/agent-circle/0.1.0` → `0.2.0`） | ✅ `protocol.rs` 集中版本常量 + `SUPPORTED_CHAT_PROTOCOLS` |
+| 82 | 协议语义化版本策略 | ✅ `docs/protocol-versioning.md` SemVer 策略 |
+| 83 | workspace 拆分：`agent-circle-core` | ✅ workspace Cargo.toml + core lib (identity/chat/errors/keys/protocol) |
+| 84 | workspace 拆分：`agent-circle-net` | ⏳ 下一轮 — network.rs 含 libp2p，独立 crate 可行 |
+| 85 | workspace 拆分：`agent-circle-cli` | ⏳ 计划为 thin main() + relay daemon |
+| 86 | workspace 拆分：`agent-circle-timeline` | ⏳ 独立 timeline 验证 crate |
+| 87 | 内部 API 稳定性契约 | ⏳ `core/src/lib.rs` 公开 API 文档 |
+| 88 | Cargo workspace 构建提速（sccache） | ⏳ CI 构建 < 5min |
+| 89 | crates.io 发布 | ⏳ `cargo install agent-circle` 可用 |
+| 90 | S08 回顾 | ⏳ Sprint 回顾文档 |
 
 ---
 
