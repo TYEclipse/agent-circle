@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### S12 · 文档 + 打包 (保障性)
 
+- **S12R122: API 文档 `docs/api/`** — 7 个模块 API 参考：index + core (identity/chat/errors/keys/protocol) + network + storage + message-queue + service-discovery + reliability/dedup/diag + observability (metrics/health/crash)；所有公开类型与函数有签名说明和代码示例
 - **S12R121: 用户手册 `docs/user-guide.md`** — 从安装到发朋友圈完整流程：安装/身份创建/守护进程/好友/私聊/群聊/朋友圈/服务发现/诊断/监控/部署/附录（11 章，~300 行）
 - **S10R109: 服务市场 PoC**
 - **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
