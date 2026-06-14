@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### S13 · 公众号 (Agent 服务发布) 🔄
+### S13 · 公众号 (Agent 服务发布) ✅
+
+- **S13R140: S13 回顾** — `docs/S13-retrospective.md` 闭合文档：10/10 完成，总进度 70%；发布→订阅→通知→发现→评分→浏览→权限 全链路打通
+- **S13R139: 权限模型 `service permit`**
 
 - **S13R138: 服务市场 TUI `service browse`** — 交互式终端浏览器 (零新依赖: stty raw + ANSI)；光标导航↑↓/jk；实时评级+新鲜度；Enter查看详情；PgUp/Dn翻页；esc/q退出
 - **S13R137: 服务评级 `service rate`** — `service rate <svc> <1-5> [-c comment]` 打分+评论；`Rating`/`RatingSummary` 数据模型 + `stars_display()` 星级格式化；`add_rating` upsert 存储；`service history`/`service view` 自动显示评分摘要
