@@ -9,6 +9,7 @@
 use crate::chat::{ChatRequest, ChatResponse};
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
+use crate::message_queue;
 use futures::StreamExt;
 use libp2p::{
     dcutr, gossipsub, identify, kad,
@@ -21,6 +22,7 @@ use libp2p::{
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
+use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 /// DHT key for relay node discovery. Relay nodes publish their addresses under this record key.
@@ -190,7 +192,7 @@ fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypai
 
 // ── Daemon ─────────────────────────────────────────────────────────
 
-pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool) -> AcResult<()> {
+pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool, data_dir: &std::path::Path) -> AcResult<()> {
     let mut swarm = build_swarm(id)?;
     let local_peer_id = *swarm.local_peer_id();
 
@@ -206,6 +208,7 @@ pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool) -> A
 
     let mut bootstrapped = false;
     let mut relay_registered_or_discovered = false;
+    let mut last_sent: HashMap<PeerId, String> = HashMap::new();
 
     loop {
         match swarm.select_next_some().await {
@@ -213,8 +216,38 @@ pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool) -> A
                 info!(addr = %address, "监听地址");
             }
 
-            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                info!(peer_id = %peer_id, "已连接");
+            SwarmEvent::ConnectionEstablished {
+                peer_id,
+                num_established,
+                ..
+            } => {
+                info!(peer_id = %peer_id, connections = num_established, "已连接");
+                // Flush offline queue for this peer
+                let data_dir = crate::storage::resolve_data_dir(crate::storage::data_dir_opt())
+                    .unwrap_or_else(|_| std::path::PathBuf::from(".agent-circle"));
+                if let Ok(q) = message_queue::Queue::open(&data_dir) {
+                    let peer_str = peer_id.to_string();
+                    let pending = match q.pending_for(&peer_str) {
+                        Ok(p) => p,
+                        Err(_) => Vec::new(),
+                    };
+                    for entry in pending {
+                        info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
+                        let chat_req = ChatRequest {
+                            from: id.name.clone(),
+                            content: entry.content.clone(),
+                        };
+                        if let Err(e) = swarm.behaviour_mut().chat.send_request(
+                            &peer_id, chat_req,
+                        ) {
+                            warn!(error = %e, "离线消息重试发送失败");
+                            let _ = q.mark_failed(entry.id, &e.to_string());
+                        } else {
+                            let _ = q.mark_delivered(entry.id);
+                            info!(peer = %peer_str, "✅ 离线消息已送达");
+                        }
+                    }
+                }
             }
 
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
@@ -272,6 +305,19 @@ pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool) -> A
                 request_response::Event::OutboundFailure { peer, error, .. },
             )) => {
                 warn!(peer = %peer, error = ?error, "消息发送失败");
+                // Stash failed message for offline retry
+                if let Some(msg) = last_sent.remove(&peer) {
+                    match message_queue::Queue::open(data_dir) {
+                        Ok(q) => {
+                            if let Err(e) = q.push(&peer.to_string(), &msg) {
+                                warn!(error = %e, "离线队列入队失败");
+                            } else {
+                                info!(peer = %peer, msg = %msg, "📥 消息已存入离线队列");
+                            }
+                        }
+                        Err(e) => warn!(error = %e, "无法打开离线队列"),
+                    }
+                }
             }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
