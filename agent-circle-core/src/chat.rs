@@ -55,6 +55,40 @@ pub fn default_ttl() -> i64 {
     chrono::Utc::now().timestamp() + DEFAULT_TTL_SECS
 }
 
+// ── Remote diagnostics (S11R119) ────────────────────────────────
+
+/// Request a remote node to run diagnostics and return results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorRequest {
+    /// Requester's DID
+    pub from: String,
+    /// Optional: which subsystem to check (identity|network|storage|contacts|errors)
+    /// If None, run all checks.
+    pub check: Option<String>,
+    /// Unix timestamp
+    pub ts: i64,
+}
+
+/// Remote diagnostic results — a compact JSON summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorResponse {
+    /// Overall status: "ok" | "degraded" | "failed"
+    pub status: String,
+    /// Number of passed checks
+    pub passed: usize,
+    /// Number of warnings
+    pub warnings: usize,
+    /// Number of failures
+    pub failures: usize,
+    /// Individual check results: (name, icon, detail)
+    pub checks: Vec<(String, String, String)>,
+    /// Remote peer info
+    pub peer_did: String,
+    pub peer_short_code: String,
+    /// Unix timestamp of the response
+    pub ts: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

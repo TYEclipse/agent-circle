@@ -105,6 +105,9 @@ enum Commands {
         /// JSON 输出
         #[arg(short, long)]
         json: bool,
+        /// 远程诊断 — 请求指定 PeerId 运行自检 (S11R119)
+        #[arg(long)]
+        peer: Option<String>,
     },
 
     /// 性能指标暴露 — OpenMetrics/Prometheus 格式 (S11R116)
@@ -488,7 +491,13 @@ async fn run() -> errors::AcResult<()> {
             DiagCmd::Clean => cmd_diag_clean()?,
             DiagCmd::Status => cmd_daemon_status()?,
         },
-        Commands::Doctor { check, json } => cmd_doctor(check.as_deref(), json)?,
+        Commands::Doctor { check, json, peer } => {
+            if let Some(ref peer_id) = peer {
+                cmd_doctor_remote(peer_id, check.as_deref(), json).await?
+            } else {
+                cmd_doctor(check.as_deref(), json)?
+            }
+        }
         Commands::Metrics => cmd_metrics()?,
     }
 
@@ -2427,6 +2436,130 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
             "⚠️ 有警告"
         } else {
             "✅ 全部通过"
+        };
+        println!("║  状态: {:<46} ║", overall);
+        println!("╚══════════════════════════════════════════════════════════╝");
+    }
+    Ok(())
+}
+
+// ── Remote doctor command (S11R119) ────────────────────────────────
+
+async fn cmd_doctor_remote(
+    peer_id_str: &str,
+    check_filter: Option<&str>,
+    json: bool,
+) -> errors::AcResult<()> {
+    use crate::network;
+    use futures::StreamExt;
+    use libp2p::request_response;
+    use libp2p::PeerId;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let peer_id: PeerId = peer_id_str
+        .parse()
+        .map_err(|_| errors::AcError::Network(format!("无效的 PeerId: '{peer_id_str}'")))?;
+
+    let id = match storage::load_identity(data_dir_opt())? {
+        Some(id) => id,
+        None => {
+            eprintln!("⚠️  尚未创建身份。请先运行: agent-circle identity create");
+            std::process::exit(1);
+        }
+    };
+
+    let mut swarm = network::build_swarm(&id)?;
+    let _rid = network::send_doctor(
+        &mut swarm,
+        peer_id,
+        &id.short_code,
+        check_filter.map(|s| s.to_string()),
+    );
+
+    // Wait for the doctor response with a 30s timeout
+    let result = timeout(Duration::from_secs(30), async {
+        loop {
+            tokio::select! {
+                event = swarm.select_next_some() => {
+                    match event {
+                        libp2p::swarm::SwarmEvent::Behaviour(
+                            crate::network::AgentCircleBehaviourEvent::Doctor(
+                                request_response::Event::Message {
+                                    message:
+                                        libp2p::request_response::Message::Response {
+                                        response, ..
+                                    },
+                                    ..
+                                },
+                            ),
+                        ) => {
+                            return Some(response);
+                        }
+                        libp2p::swarm::SwarmEvent::Behaviour(
+                            crate::network::AgentCircleBehaviourEvent::Doctor(
+                                libp2p::request_response::Event::OutboundFailure {
+                                    error, ..
+                                },
+                            ),
+                        ) => {
+                            eprintln!("远程诊断发送失败: {error:?}");
+                            return None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    })
+    .await;
+
+    match result {
+        Ok(Some(resp)) => display_doctor_response(&resp, peer_id_str, json)?,
+        Ok(None) => {
+            eprintln!("远程诊断失败");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            eprintln!("远程诊断超时 (30s) — 目标 Peer 可能不在线或不可达");
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+fn display_doctor_response(
+    resp: &crate::chat::DoctorResponse,
+    peer_id: &str,
+    json: bool,
+) -> errors::AcResult<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(resp)?);
+    } else {
+        println!("╔══════════════════════════════════════════════════════════╗");
+        println!("║  🩺 远程诊断 — Peer: {peer_id:<30} ║", peer_id = peer_id);
+        println!(
+            "║  节点: {:<13}  短码: {:<30} ║",
+            &resp.peer_did[..std::cmp::min(48, resp.peer_did.len())],
+            resp.peer_short_code
+        );
+        println!("╠══════════════════════════════════════════════════════════╣");
+        for (name, icon, detail) in &resp.checks {
+            println!("║  {}  {:<8}  {:<38} ║", icon, name, detail);
+        }
+        println!("╠══════════════════════════════════════════════════════════╣");
+        println!(
+            "║  总计: {} 项  通过: {}  警告: {}  失败: {}",
+            resp.checks.len(),
+            resp.passed,
+            resp.warnings,
+            resp.failures,
+        );
+        let overall = match resp.status.as_str() {
+            "ok" => "✅ 全部通过",
+            "degraded" => "⚠️ 有警告",
+            _ => "❌ 有失败项",
         };
         println!("║  状态: {:<46} ║", overall);
         println!("╚══════════════════════════════════════════════════════════╝");

@@ -56,6 +56,11 @@ pub fn services_topic() -> String {
     format!("agent-circle/services/{VERSION}")
 }
 
+/// Remote diagnostics request-response protocol (S11R119).
+pub fn doctor_protocol() -> String {
+    format!("/agent-circle/doctor/{VERSION}")
+}
+
 // ── Future multi-version support ──────────────────────────────────
 
 /// When we bump to 0.2.0, list ALL supported versions for backward

@@ -6,7 +6,7 @@
 //! Relay: enables NAT traversal when DCUtR hole-punching fails
 //! Relay discovery: relay nodes broadcast their address via DHT
 
-use crate::chat::{ChatRequest, ChatResponse};
+use crate::chat::{ChatRequest, ChatResponse, DoctorRequest, DoctorResponse};
 use crate::dedup::DedupFilter;
 use crate::diag::DiagCounters;
 use crate::errors::{AcError, AcResult};
@@ -34,6 +34,7 @@ use tracing::{debug, info, warn};
 use crate::protocol;
 
 pub type ChatBehaviour = request_response::json::Behaviour<ChatRequest, ChatResponse>;
+pub type DoctorBehaviour = request_response::json::Behaviour<DoctorRequest, DoctorResponse>;
 
 #[derive(NetworkBehaviour)]
 pub struct AgentCircleBehaviour {
@@ -43,6 +44,7 @@ pub struct AgentCircleBehaviour {
     pub dcutr: dcutr::Behaviour,
     pub relay: relay::Behaviour,
     pub chat: ChatBehaviour,
+    pub doctor: DoctorBehaviour,
     pub gossip: gossipsub::Behaviour,
     pub connection_limits: connection_limits::Behaviour,
 }
@@ -78,6 +80,15 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
                 request_response::Config::default(),
             );
 
+            let doctor = DoctorBehaviour::new(
+                [(
+                    StreamProtocol::try_from_owned(protocol::doctor_protocol())
+                        .expect("valid doctor protocol"),
+                    request_response::ProtocolSupport::Full,
+                )],
+                request_response::Config::default(),
+            );
+
             // GossipSub for group chat — mesh-based pub/sub
             let gossipsub_config = gossipsub::ConfigBuilder::default()
                 .heartbeat_interval(Duration::from_secs(2))
@@ -97,6 +108,7 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
                 dcutr,
                 relay: relay::Behaviour::new(key.public().to_peer_id(), relay_config),
                 chat,
+                doctor,
                 gossip,
                 connection_limits: connection_limits::Behaviour::new(
                     connection_limits::ConnectionLimits::default()
@@ -211,6 +223,145 @@ fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypai
 /// Convert OutboundRequestId to its underlying u64 for SQLite persistence.
 fn request_id_to_u64(id: request_response::OutboundRequestId) -> u64 {
     unsafe { std::mem::transmute(id) }
+}
+
+// ── Remote diagnostics (S11R119) ────────────────────────────────────
+
+/// Send a remote diagnostics request to a peer.
+pub fn send_doctor(
+    swarm: &mut Swarm<AgentCircleBehaviour>,
+    peer_id: PeerId,
+    from: &str,
+    check: Option<String>,
+) -> request_response::OutboundRequestId {
+    let req = DoctorRequest {
+        from: from.to_string(),
+        check,
+        ts: chrono::Utc::now().timestamp(),
+    };
+    swarm.behaviour_mut().doctor.send_request(&peer_id, req)
+}
+
+/// Run local doctor checks and return a response (daemon-side).
+fn run_doctor_checks(
+    data_dir: &std::path::Path,
+    id: &Identity,
+    check_filter: Option<&str>,
+) -> DoctorResponse {
+    let pb = data_dir.to_path_buf();
+    let mut checks: Vec<(String, String, String)> = Vec::new();
+    let should_run = |name: &str| -> bool { check_filter.is_none() || check_filter == Some(name) };
+
+    // Identity
+    if should_run("identity") {
+        let identity_path = pb.join("identity.key");
+        if identity_path.exists() {
+            if let Ok(Some(_)) = crate::storage::load_identity(Some(&pb)) {
+                let short = &id.did[..std::cmp::min(48, id.did.len())];
+                checks.push((
+                    "identity".into(),
+                    "✅".into(),
+                    format!("DID: {short} · 短码: {}", id.short_code),
+                ));
+            } else {
+                checks.push(("identity".into(), "❌".into(), "加载失败".into()));
+            }
+        } else {
+            checks.push(("identity".into(), "❌".into(), "未创建身份".into()));
+        }
+    }
+
+    // Storage (simplified)
+    if should_run("storage") {
+        let card_ok = pb.join("card.json").exists();
+        let contacts_ok = pb.join("contacts.json").exists();
+        let timeline_ok = pb.join("timeline.json").exists();
+        let svc_ok = pb.join("services.json").exists();
+        let all_ok = card_ok && contacts_ok && timeline_ok && svc_ok;
+        checks.push((
+            "storage".into(),
+            if all_ok {
+                "✅".into()
+            } else {
+                "⚠️".into()
+            },
+            format!(
+                "card {} · contacts {} · timeline {} · services {}",
+                if card_ok { "✓" } else { "✗" },
+                if contacts_ok { "✓" } else { "✗" },
+                if timeline_ok { "✓" } else { "✗" },
+                if svc_ok { "✓" } else { "✗" },
+            ),
+        ));
+    }
+
+    // Network
+    if should_run("network") {
+        let port = pb.join("control.port");
+        let daemon_up = port.exists();
+        let (peer_count, svc_count) = match crate::service_discovery::load_registry(&pb) {
+            Ok(r) => (r.peer_count(), r.service_count()),
+            Err(_) => (0, 0),
+        };
+        checks.push((
+            "network".into(),
+            if daemon_up {
+                "✅".into()
+            } else {
+                "⚠️".into()
+            },
+            format!(
+                "{} · 缓存 {peer_count} peers / {svc_count} services",
+                if daemon_up {
+                    "daemon 在线"
+                } else {
+                    "daemon 离线"
+                },
+            ),
+        ));
+    }
+
+    // Contacts
+    if should_run("contacts") {
+        match crate::storage::load_contacts(Some(&pb)) {
+            Ok(contacts) => {
+                checks.push((
+                    "contacts".into(),
+                    if contacts.is_empty() {
+                        "⚠️".into()
+                    } else {
+                        "✅".into()
+                    },
+                    format!("{} 个联系人", contacts.len()),
+                ));
+            }
+            Err(_) => {
+                checks.push(("contacts".into(), "❌".into(), "加载失败".into()));
+            }
+        }
+    }
+
+    let passed = checks.iter().filter(|(_, s, _)| s == "✅").count();
+    let warnings = checks.iter().filter(|(_, s, _)| s == "⚠️").count();
+    let failures = checks.iter().filter(|(_, s, _)| s == "❌").count();
+    let status = if failures > 0 {
+        "failed"
+    } else if warnings > 0 {
+        "degraded"
+    } else {
+        "ok"
+    };
+
+    DoctorResponse {
+        status: status.into(),
+        passed,
+        warnings,
+        failures,
+        checks,
+        peer_did: id.did.clone(),
+        peer_short_code: id.short_code.clone(),
+        ts: chrono::Utc::now().timestamp(),
+    }
 }
 
 // ── Daemon ─────────────────────────────────────────────────────────
@@ -557,6 +708,27 @@ pub async fn run_daemon(
             }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
+
+            // ── Doctor: incoming remote diagnostics request (S11R119) ──
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Doctor(
+                request_response::Event::Message {
+                    message:
+                        Message::Request {
+                            request, channel, ..
+                        },
+                    ..
+                },
+            )) => {
+                let req_from = &request.from;
+                let req_check = request.check.as_deref();
+                info!(from = %req_from, check = ?req_check, "🩺 收到远程诊断请求");
+                let resp = run_doctor_checks(data_dir, id, req_check);
+                let _ = swarm
+                    .behaviour_mut()
+                    .doctor
+                    .send_response(channel, resp);
+            }
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Doctor(_)) => {}
 
             // ── GossipSub: incoming group message or service announcement ──
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Gossip(
