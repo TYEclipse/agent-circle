@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### S18 · 集成测试 + e2e ✅
+
+- **S18R190: S18 回顾** — `docs/S18-retrospective.md` 闭合文档：10/10 完成，总进度 95%
+- **S18R182-188: E2E 集成测试 7 场景** — 身份创建/1-on-1 Chat/群聊/朋友圈/离线消息/NAT验证/Crash恢复；E2eCluster harness 框架
+- **S18R181: E2E 测试框架** — `tests/e2e_harness.rs` E2eCluster: spawn(N)/connect_all/join_group/wait_for_mesh/wait_for_chat
+
 ### S17 · 边界条件 + 长稳 ✅
 
 - **S17R180: S17 回顾** — `docs/S17-retrospective.md` 闭合文档：10/10 完成，总进度 90%
