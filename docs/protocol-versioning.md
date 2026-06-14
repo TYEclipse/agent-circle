@@ -1,4 +1,4 @@
-# Agent Circle — Protocol Versioning Strategy (S08R82)
+# Agent Circle — Protocol Versioning Strategy
 
 ## SemVer for wire protocols
 

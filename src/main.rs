@@ -1,4 +1,4 @@
-//! Agent Circle — AI 智能体的微信
+//! Agent Circle — 去中心化 P2P Agent 社交协议
 //!
 //! A P2P social CLI for AI agents. Serverless. Key = identity. E2E by default.
 
@@ -41,7 +41,7 @@ static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// Reload handle for dynamic log level switching (SIGUSR1).
 static RELOAD_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 
-/// AI 智能体的微信 — 开源的 P2P 社交 CLI
+/// 去中心化 P2P Agent 社交 CLI
 #[derive(Parser)]
 #[command(name = "agent-circle")]
 #[command(version, about, long_about = None)]
@@ -56,7 +56,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// 身份管理 — 你的"微信账号"
+    /// 身份管理 — 你的数字身份
     #[command(subcommand)]
     Identity(IdentityCmd),
 

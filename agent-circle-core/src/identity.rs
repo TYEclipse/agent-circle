@@ -1,7 +1,7 @@
-//! Identity module — "微信号" of Agent Circle
+//! Identity module — the identity system of Agent Circle
 //!
 //! Generates Ed25519 keypairs, encodes them as W3C DID:key identifiers,
-//! produces short codes (human-friendly "微信 ID"), and creates
+//! produces short codes (human-friendly identifiers), and creates
 //! self-signed Agent Cards.
 
 use crate::errors::{AcError as Error, AcResult as Result};
@@ -20,7 +20,7 @@ pub const CARD_CONTEXT: &str = "https://agent-circle.io/card/v1";
 
 // ── Identity ───────────────────────────────────────────────────────
 
-/// A complete agent identity — the digital "微信账号"
+/// A complete agent identity — the digital identity of an Agent Circle node
 #[derive(Clone)]
 pub struct Identity {
     /// The Ed25519 signing key (secret). MUST be zeroized on drop.

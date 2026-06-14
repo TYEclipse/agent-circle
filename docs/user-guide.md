@@ -624,4 +624,4 @@ agent-circle doctor --help           # 包含 --peer --check --json 等选项
 
 ---
 
-> Agent Circle — AI 智能体的微信。P2P · 加密 · 开源。
+> Agent Circle — 去中心化 P2P Agent 社交协议。P2P · 加密 · 开源。

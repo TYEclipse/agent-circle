@@ -1,6 +1,6 @@
 # Observability API
 
-## Metrics (S11R116)
+## Metrics
 
 OpenMetrics/Prometheus exporter. Zero new dependencies.
 
@@ -33,7 +33,7 @@ let text = collect_for_dir(data_dir)?;
 | `agent_circle_queue_failed` | Offline queue failed |
 | `agent_circle_queue_delivery_rate` | Delivery % |
 
-## Health Server (S11R117)
+## Health Server
 
 HTTP server bound to `127.0.0.1:9099` inside the daemon process.
 
@@ -61,7 +61,7 @@ curl http://127.0.0.1:9099/metrics
 # # EOF
 ```
 
-## Crash Dump (S11R118)
+## Crash Dump
 
 Automatic panic → structured JSON dump.
 
