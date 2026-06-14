@@ -7,6 +7,7 @@ pub mod dedup;
 pub mod diag;
 pub mod errors;
 pub mod identity;
+pub mod keys;
 pub mod message_queue;
 pub mod network;
 pub mod reliability;
