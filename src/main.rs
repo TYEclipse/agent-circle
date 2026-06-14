@@ -245,6 +245,8 @@ enum ServiceCmd {
         #[arg(short, long)]
         comment: Option<String>,
     },
+    /// 交互式浏览 — 服务市场 TUI (S13R138)
+    Browse,
 }
 
 #[derive(Subcommand)]
@@ -557,6 +559,7 @@ async fn run() -> errors::AcResult<()> {
                 score,
                 comment,
             } => cmd_service_rate(&service_id, score, comment.as_deref())?,
+            ServiceCmd::Browse => cmd_service_browse()?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2783,6 +2786,228 @@ fn cmd_service_rate(service_id: &str, score: u8, comment: Option<&str>) -> error
     if comment.is_some() {
         println!("💬 评论已保存。");
     }
+    Ok(())
+}
+
+// ── Service browse TUI (S13R138) ──────────────────────────────────
+
+/// Enter raw terminal mode via stty.
+fn enable_raw_mode() {
+    let _ = std::process::Command::new("stty")
+        .arg("raw")
+        .arg("-echo")
+        .status();
+}
+
+/// Restore terminal to cooked mode.
+fn disable_raw_mode() {
+    let _ = std::process::Command::new("stty")
+        .arg("-raw")
+        .arg("echo")
+        .status();
+}
+
+/// Read a single byte from stdin (non-blocking after raw mode).
+fn read_key() -> Option<u8> {
+    use std::io::Read;
+    let mut buf = [0u8; 4];
+    match std::io::stdin().read(&mut buf) {
+        Ok(1..) => Some(buf[0]),
+        _ => None,
+    }
+}
+
+/// Clear screen and move cursor home.
+fn clear_screen() {
+    print!("\x1b[2J\x1b[H");
+}
+
+/// Interactive TUI for browsing the service marketplace.
+fn cmd_service_browse() -> errors::AcResult<()> {
+    use std::io::Write;
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+    let all: Vec<_> = registry.all_services();
+    if all.is_empty() {
+        println!("📭 服务市场为空。请启动 daemon 或发布服务。");
+        println!("💡  agent-circle daemon start   # 启动网络节点");
+        return Ok(());
+    }
+
+    let n = all.len();
+    let mut cursor: usize = 0;
+    let page_size = 15usize;
+    let mut offset = 0usize;
+
+    enable_raw_mode();
+
+    loop {
+        clear_screen();
+        let now = chrono::Utc::now().timestamp();
+
+        println!("\x1b[1m🌐 服务市场 · {n} 个服务\x1b[0m");
+        println!("{}\x1b[0m", "─".repeat(72));
+        println!(
+            "  \x1b[2m{:<12}  {:<24}  {:<12}  {:>8}\x1b[0m",
+            "Peer", "Service", "Rating", "Fresh"
+        );
+
+        let end = std::cmp::min(offset + page_size, n);
+        for (i, (peer, svc)) in all.iter().enumerate().skip(offset).take(end - offset) {
+            let marker = if i == cursor { "\x1b[7m" } else { "" };
+            let rst = if i == cursor { "\x1b[0m" } else { "" };
+            let short_peer: String = peer.chars().take(12).collect();
+            let svc_name: String = svc.name.chars().take(24).collect();
+
+            let rating = storage::rating_summary(&data_dir, &svc.id)
+                .ok()
+                .filter(|s| s.count > 0)
+                .map(|s| format!("\x1b[33m★\x1b[0m {:.1}", s.average))
+                .unwrap_or_else(|| "—".to_string());
+
+            let fresh = registry
+                .last_seen_for(peer)
+                .map(|ts| {
+                    let age = now - ts;
+                    if age < 300 {
+                        "\x1b[32m●\x1b[0m live".to_string()
+                    } else if age < 1800 {
+                        format!("\x1b[33m●\x1b[0m {}m", age / 60)
+                    } else {
+                        format!("\x1b[2m{}h\x1b[0m", age / 3600)
+                    }
+                })
+                .unwrap_or_else(|| "\x1b[2m—\x1b[0m".to_string());
+
+            println!("  {marker}{short_peer:<12}  {svc_name:<24}  {rating:<12}  {fresh:>8}{rst}");
+        }
+
+        // Detail panel for selected service
+        let (sel_peer, sel_svc) = &all[cursor];
+        println!("\n{}\x1b[0m", "─".repeat(72));
+        println!("\x1b[1m📋 {}\x1b[0m", sel_svc.name);
+        println!("  ID:      {}", sel_svc.id);
+        println!("  Peer:    {}", sel_peer);
+        println!("  Endpoint: {}", sel_svc.endpoint);
+        if let Some(ref desc) = sel_svc.description {
+            println!("  Desc:    {}", desc);
+        }
+        if !sel_svc.tags.is_empty() {
+            println!("  Tags:    [{}]", sel_svc.tags.join(", "));
+        }
+        if let Ok(summary) = storage::rating_summary(&data_dir, &sel_svc.id) {
+            if summary.count > 0 {
+                println!("  ⭐        {}", summary.stars_display());
+            }
+        }
+
+        // Publication history for selected
+        if let Ok(history) = storage::load_publication_history(&data_dir, &sel_svc.id) {
+            if !history.is_empty() {
+                println!("  📰 最近发布:");
+                for pub_msg in history.publications.iter().take(5) {
+                    println!(
+                        "      [v{}] {}  {}",
+                        pub_msg.version,
+                        pub_msg.title,
+                        pub_msg.timestamp.format("%m-%d %H:%M")
+                    );
+                }
+            }
+        }
+
+        println!("\n{}\x1b[0m", "─".repeat(72));
+        println!(
+            "\x1b[2m↑↓/jk 导航  Enter=详情  q=退出  PgUp/Dn=翻页  {}\x1b[0m",
+            if n > 0 {
+                format!("{}/{}", cursor + 1, n)
+            } else {
+                String::new()
+            }
+        );
+
+        let _ = std::io::stdout().flush();
+
+        match read_key() {
+            // Escape — check for arrow sequences, else quit
+            Some(0x1b) => {
+                if read_key() == Some(b'[') {
+                    match read_key() {
+                        Some(b'A') => cursor = cursor.saturating_sub(1),
+                        Some(b'B') => {
+                            if cursor + 1 < n {
+                                cursor += 1;
+                            }
+                        }
+                        Some(b'5') => {
+                            let _ = read_key(); // ~
+                            cursor = cursor.saturating_sub(page_size);
+                        }
+                        Some(b'6') => {
+                            let _ = read_key(); // ~
+                            cursor = std::cmp::min(cursor + page_size, n.saturating_sub(1));
+                        }
+                        _ => {}
+                    }
+                } else {
+                    break; // standalone Esc = quit
+                }
+            }
+            Some(b'q') => break,
+            Some(b'j') => {
+                if cursor + 1 < n {
+                    cursor += 1;
+                }
+            }
+            Some(b'k') => {
+                cursor = cursor.saturating_sub(1);
+            }
+            // Enter — show detailed view
+            Some(b'\r') | Some(b'\n') => {
+                disable_raw_mode();
+                clear_screen();
+                let (_, svc) = &all[cursor];
+                // Find latest version
+                if let Ok(history) = storage::load_publication_history(&data_dir, &svc.id) {
+                    if let Some(latest) = history.publications.first() {
+                        println!(
+                            "\n🔎 查看最新文章: agent-circle service view {} {}",
+                            svc.id, latest.version
+                        );
+                        println!(
+                            "   评分: agent-circle service rate {} <1-5> [-c comment]",
+                            svc.id
+                        );
+                    }
+                }
+                println!("\n   历史: agent-circle service history {}", svc.id);
+                println!("\n💡 按 Enter 返回浏览...");
+                let _ = std::io::stdout().flush();
+                enable_raw_mode();
+                // Wait for Enter
+                loop {
+                    let k = read_key();
+                    if k == Some(b'\r') || k == Some(b'\n') || k == Some(b'q') {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // Scroll tracking
+        if cursor < offset {
+            offset = cursor;
+        }
+        if cursor >= offset + page_size {
+            offset = cursor + 1 - page_size;
+        }
+    }
+
+    disable_raw_mode();
+    clear_screen();
+    println!("👋 已退出服务市场。");
     Ok(())
 }
 
