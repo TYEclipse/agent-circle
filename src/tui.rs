@@ -62,6 +62,10 @@ pub struct App {
     timeline_scroll: usize,
     /// Selected group index in the groups view.
     group_index: usize,
+    /// Notification queue (shown as banner).
+    notifications: Vec<String>,
+    /// Countdown timer for notification display (render ticks).
+    notification_timer: usize,
     /// Whether the user has exited.
     should_quit: bool,
 }
@@ -81,6 +85,8 @@ impl App {
             timeline,
             timeline_scroll: 0,
             group_index: 0,
+            notifications: Vec::new(),
+            notification_timer: 0,
             should_quit: false,
         }
     }
@@ -108,6 +114,27 @@ impl App {
         }
         self.messages.push(ChatMessage { text, is_me: true });
         self.input.clear();
+    }
+
+    /// Push a notification to the queue. Also rings terminal bell.
+    fn notify(&mut self, msg: &str) {
+        self.notifications.push(msg.to_string());
+        self.notification_timer = 5; // show for ~5 ticks
+                                     // Terminal bell
+        print!("\x07");
+    }
+
+    /// Tick the notification timer. Returns true if still showing.
+    fn tick_notification(&mut self) -> bool {
+        if self.notification_timer > 0 {
+            self.notification_timer -= 1;
+            if self.notification_timer == 0 {
+                self.notifications.clear();
+            }
+            true
+        } else {
+            false
+        }
     }
 
     /// Move selection up (menu, contact list, or chat scroll).
@@ -233,6 +260,7 @@ fn run_app<B: ratatui::backend::Backend>(
 
     loop {
         terminal.draw(|f| ui(f, app, &menu_items))?;
+        app.tick_notification();
 
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
@@ -276,6 +304,8 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Enter => {
                         if !app.contacts.is_empty() {
                             let idx = app.contact_index;
+                            let name = app.contacts[idx].name.clone();
+                            app.notify(&format!("进入与 {} 的聊天", name));
                             app.open_chat(idx);
                         }
                     }
@@ -356,6 +386,26 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         .alignment(Alignment::Center)
         .block(Block::default());
     f.render_widget(header, chunks[0]);
+
+    // ── Notification banner ──
+    if app.notification_timer > 0 {
+        let notif_text = app.notifications.last().map(|s| s.as_str()).unwrap_or("");
+        let notif_banner = Paragraph::new(Line::from(Span::styled(
+            format!(" 🔔 {}", notif_text),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )))
+        .alignment(Alignment::Center);
+        // Render just above the body (overlapping slightly into header area)
+        let banner_area = Rect {
+            x: area.x,
+            y: area.y + 4,
+            width: area.width,
+            height: 1,
+        };
+        f.render_widget(notif_banner, banner_area);
+    }
 
     // ── Body: left sidebar (menu) | right panel (content) ──
     let body_chunks = Layout::default()
