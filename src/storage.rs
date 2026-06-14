@@ -252,7 +252,7 @@ mod tests {
         let tmp = temp_dir();
         let id = Identity::generate();
         let card = id
-            .create_card("TestBot", "h:test", "gpt", &["code".into()])
+            .create_card("TestBot", "h:test", "gpt", &["code".into()], vec![])
             .unwrap();
         save_card(&card, Some(&tmp)).unwrap();
         let loaded = load_card(Some(&tmp)).unwrap().unwrap();

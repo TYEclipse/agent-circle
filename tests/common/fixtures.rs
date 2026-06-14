@@ -89,6 +89,7 @@ pub fn agent_card_for(id: &Identity) -> AgentCard {
         "human:test",
         "test-model",
         &["chat".into(), "timeline".into()],
+        vec![],
     )
     .expect("fixture agent_card should always succeed")
 }
