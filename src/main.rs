@@ -247,6 +247,22 @@ enum ServiceCmd {
     },
     /// 交互式浏览 — 服务市场 TUI (S13R138)
     Browse,
+    /// 权限管理 — 设置服务访问模式 (S13R139)
+    Permit {
+        /// 服务标识符
+        service_id: String,
+        /// 权限模式: public | approval | whitelist
+        mode: String,
+    },
+    /// 白名单管理 — 添加/移除白名单成员 (S13R139)
+    Whitelist {
+        /// 服务标识符
+        service_id: String,
+        /// 操作: add | remove | list
+        action: String,
+        /// 目标 Peer ID (add/remove 时必需)
+        peer_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -560,6 +576,12 @@ async fn run() -> errors::AcResult<()> {
                 comment,
             } => cmd_service_rate(&service_id, score, comment.as_deref())?,
             ServiceCmd::Browse => cmd_service_browse()?,
+            ServiceCmd::Permit { service_id, mode } => cmd_service_permit(&service_id, &mode)?,
+            ServiceCmd::Whitelist {
+                service_id,
+                action,
+                peer_id,
+            } => cmd_service_whitelist(&service_id, &action, peer_id.as_deref())?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2272,6 +2294,10 @@ fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
             println!("⭐ {}", summary.stars_display());
         }
     }
+    // S13R139 — Show permission
+    if let Ok(perm) = storage::load_permission(&data_dir, service_id) {
+        println!("   {}", storage::permission_display(&perm));
+    }
     println!();
     for (i, pub_msg) in history.publications.iter().take(limit).enumerate() {
         println!(
@@ -2709,6 +2735,11 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
         }
     }
 
+    // S13R139 — Show permission
+    if let Ok(perm) = storage::load_permission(&data_dir, service_id) {
+        println!("║  🔏   {:<49}║", storage::permission_display(&perm));
+    }
+
     println!("║  版本: v{:<47}║", pub_msg.version);
     println!(
         "║  时间: {:<49}║",
@@ -3008,6 +3039,117 @@ fn cmd_service_browse() -> errors::AcResult<()> {
     disable_raw_mode();
     clear_screen();
     println!("👋 已退出服务市场。");
+    Ok(())
+}
+
+// ── Service permissions (S13R139) ─────────────────────────────────
+
+fn cmd_service_permit(service_id: &str, mode: &str) -> errors::AcResult<()> {
+    use agent_circle_core::publication::ServicePermission;
+
+    let perm = match mode {
+        "public" => ServicePermission::Public,
+        "approval" => ServicePermission::ApprovalRequired,
+        "whitelist" => ServicePermission::Whitelist(Vec::new()),
+        _ => {
+            return Err(errors::AcError::Identity(format!(
+                "invalid mode '{mode}': use public, approval, or whitelist"
+            )));
+        }
+    };
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    storage::save_permission(&data_dir, service_id, &perm)?;
+    println!(
+        "🔏 服务 '{}' 权限已更新: {}",
+        service_id,
+        storage::permission_display(&perm)
+    );
+    Ok(())
+}
+
+fn cmd_service_whitelist(
+    service_id: &str,
+    action: &str,
+    peer_id: Option<&str>,
+) -> errors::AcResult<()> {
+    use agent_circle_core::publication::ServicePermission;
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let mut perm = storage::load_permission(&data_dir, service_id)?;
+
+    match action {
+        "add" => {
+            let pid = peer_id.ok_or_else(|| {
+                errors::AcError::Identity("whitelist add requires <peer_id>".into())
+            })?;
+            match &mut perm {
+                ServicePermission::Whitelist(list) => {
+                    if !list.contains(&pid.to_string()) {
+                        list.push(pid.to_string());
+                        storage::save_permission(&data_dir, service_id, &perm)?;
+                        println!("✅ 已将 {} 加入 '{}' 白名单", pid, service_id);
+                    } else {
+                        println!("⚠️  {} 已在 '{}' 白名单中", pid, service_id);
+                    }
+                }
+                _ => {
+                    return Err(errors::AcError::Identity(format!(
+                        "service '{}' is not in whitelist mode; use `service permit {} whitelist` first",
+                        service_id, service_id
+                    )));
+                }
+            }
+        }
+        "remove" => {
+            let pid = peer_id.ok_or_else(|| {
+                errors::AcError::Identity("whitelist remove requires <peer_id>".into())
+            })?;
+            match &mut perm {
+                ServicePermission::Whitelist(list) => {
+                    let len_before = list.len();
+                    list.retain(|p| p != pid);
+                    if list.len() < len_before {
+                        storage::save_permission(&data_dir, service_id, &perm)?;
+                        println!("✅ 已将 {} 从 '{}' 白名单移除", pid, service_id);
+                    } else {
+                        println!("⚠️  {} 不在 '{}' 白名单中", pid, service_id);
+                    }
+                }
+                _ => {
+                    return Err(errors::AcError::Identity(format!(
+                        "service '{}' is not in whitelist mode",
+                        service_id
+                    )));
+                }
+            }
+        }
+        "list" => match &perm {
+            ServicePermission::Whitelist(list) => {
+                if list.is_empty() {
+                    println!("📋 '{}' 白名单为空", service_id);
+                } else {
+                    println!("📋 '{}' 白名单 ({} 成员):", service_id, list.len());
+                    for (i, p) in list.iter().enumerate() {
+                        println!("   {}. {}", i + 1, p);
+                    }
+                }
+            }
+            _ => {
+                println!(
+                    "📋 服务 '{}' 当前权限: {}",
+                    service_id,
+                    storage::permission_display(&perm)
+                );
+            }
+        },
+        _ => {
+            return Err(errors::AcError::Identity(format!(
+                "invalid action '{action}': use add, remove, or list"
+            )));
+        }
+    }
+
     Ok(())
 }
 

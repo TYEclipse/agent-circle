@@ -435,6 +435,47 @@ pub fn rating_summary(
     ))
 }
 
+// ── Service permissions (S13R139) ─────────────────────────────────
+
+use agent_circle_core::publication::ServicePermission;
+
+fn permission_path(data_dir: &Path, service_id: &str) -> PathBuf {
+    let safe_id = str::replace(service_id, &['/', '\\'][..], "_");
+    data_dir.join(format!("permissions-{}.json", safe_id))
+}
+
+/// Load permission for a service. Defaults to Public if not set.
+pub fn load_permission(data_dir: &Path, service_id: &str) -> AcResult<ServicePermission> {
+    let path = permission_path(data_dir, service_id);
+    if !path.exists() {
+        return Ok(ServicePermission::Public);
+    }
+    let json = std::fs::read_to_string(&path)?;
+    let perm: ServicePermission = serde_json::from_str(&json)?;
+    Ok(perm)
+}
+
+/// Save permission for a service.
+pub fn save_permission(
+    data_dir: &Path,
+    service_id: &str,
+    perm: &ServicePermission,
+) -> AcResult<()> {
+    let path = permission_path(data_dir, service_id);
+    let json = serde_json::to_string_pretty(perm)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Format permission for display.
+pub fn permission_display(perm: &ServicePermission) -> &'static str {
+    match perm {
+        ServicePermission::Public => "🔓 公开",
+        ServicePermission::ApprovalRequired => "🔐 需审批",
+        ServicePermission::Whitelist(_) => "🔒 白名单",
+    }
+}
+
 #[cfg(test)]
 mod publication_storage_tests {
     use super::*;
