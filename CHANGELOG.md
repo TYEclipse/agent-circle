@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **S02R25: 压力测试工具** — `chat pressure-test <PEER> --count 100` 发送 N 条消息统计送达率、失败数、超时数、吞吐量；<20 条逐条打印延迟，≥20 条每 10 条换行；自动判断 99.9% 达标
+- **S02R26/R27: 99.9% 投递率验证 + 丢包模拟** — 升级压力测试：`--drop-rate` 发送端随机丢弃模拟丢包；延迟分布统计 (min/avg/max/p50/p95/p99)；进度百分比显示；`--output` 自动生成 JSON 验证报告文件；自动判定 PASS_R26 (≥99.9%) / PASS_R27 (丢包 ≥99.0%)
 - **S02R24: 投递状态回调** — `chat send --track` 发送后等待 ACK/Failure 实时打印投递状态（✅ Delivered / ❌ Failed / ⏰ Pending）；`--timeout` 自定义超时（默认 30s）；`send_chat()` 现在返回 `OutboundRequestId`
 - **S02R22: 消息序列号 + 顺序保证** — `ChatRequest.seq` 发送端单调递增，`SequenceTracker` 接收端按序缓冲乱序消息，gap 填满后自动冲刷投递；断线重连时重置 per-peer 状态；新增 6 个单元测试
 - **S02R19: 崩溃恢复 — PendingTracker SQLite 持久化** — `pending` 表记录所有飞行中消息，daemon 被 kill -9 后重启自动恢复未 ACK 消息并重新发送；Queue 统一打开一次复用；expire_pending() 定期清理过期 pending 条目；新增 6 个单元测试
