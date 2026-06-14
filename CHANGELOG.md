@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
 - **S10R107: 公众号模式-服务订阅** — `ServiceSubscriptions` 订阅跟踪（`agent-circle-core`）；`agent-circle service subscribe/unsubscribe/subscriptions` CLI（支持 `service@peer` 语法 + `--label`）；`subscriptions.json` 持久化；daemon 自动检测订阅服务更新并记录通知
 - **S10R106: 服务能力协商** — `CapabilityProbe`/`CapabilityStatement`/`ProtocolVersion` 类型（`agent-circle-core`）；`agent-circle service negotiate <peer> <service>` CLI 命令（查询协议版本 + 参数格式）；`ServiceInfo` 新增 `protocol_versions` + `input_schema` 可选字段；`service call` 新增 `--skip-negotiate` 标志
 - **S10R105: Service 彩色表格展示层** — `agent-circle service list` 输出 ANSI 彩色 ASCII 表格（Peer/Service/Name/Endpoint/Tags 列）；`--verbose` 模式显示 Description + 最后在线时间；`ServiceRegistry.all_services_with_meta()` API 扩展（含 `last_seen` 时间戳）；字符边界安全的截断支持 emoji

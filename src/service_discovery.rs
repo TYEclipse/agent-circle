@@ -126,6 +126,25 @@ impl ServiceRegistry {
             info!(count = stale.len(), "清理过期服务记录");
         }
     }
+
+    // ── Cache freshness (S10R108) ──────────────────────────────────
+
+    /// Whether the registry has any cached data.
+    pub fn has_cached_data(&self) -> bool {
+        self.peer_count() > 0
+    }
+
+    /// Check if a specific peer's records are still fresh.
+    #[allow(dead_code)] // public API used by cache diagnostics
+    pub fn is_peer_fresh(&self, peer_id: &str, max_age_secs: i64) -> bool {
+        match self.last_seen.get(peer_id) {
+            Some(ts) => {
+                let now = chrono::Utc::now().timestamp();
+                now - ts <= max_age_secs
+            }
+            None => false,
+        }
+    }
 }
 
 /// Publish the agent's services on the service discovery GossipSub topic.
