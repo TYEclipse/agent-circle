@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S04R50: S04 回顾文档** — `S04_RETROSPECTIVE.md`：fuzz+混沌总览、测试数据、经验教训、S05 准备
 - **S04R47–R49: 混沌工程测试** — `tests/chaos.rs`：6 个混沌测试 (崩溃恢复持久化 + 部分交付恢复 + 网络分区离线队列 + 消息洪峰 200 条 + 洪峰半排半留)；验证 Queue SQLite 持久化在 crash/partition/flood 下不丢消息
 - **S04R41–R46: cargo fuzz 集成 + 4 个 fuzz targets** — `fuzz/`：`cargo +nightly fuzz` 脚手架，4 个 fuzz target：json_deser (ChatRequest/ChatResponse/AgentCard/TimelineNode/Timeline 反序列化)、did_parse (decode_did_key)、timeline_verify (Timeline::verify)、agent_card_verify (AgentCard::verify)；所有 target 保证任意输入不 panic
 - **S03R40: S03 回顾文档** — `S03_RETROSPECTIVE.md`：覆盖率总览、经验教训、风险与延期、S04 准备清单
