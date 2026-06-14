@@ -45,5 +45,5 @@ libp2p-request-response = { version = "0.28", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 
-# Pin time to avoid rcgen blanket-impl conflict
-time = "=0.3.36"
+# Pin time to avoid rcgen blanket-impl conflict and RUSTSEC-2026-0009
+time = "=0.3.47"
