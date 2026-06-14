@@ -4,6 +4,8 @@
 //! Tests can send messages to it and verify delivery without needing
 //! a separate daemon process.
 
+pub mod fixtures;
+
 use agent_circle::chat::ChatResponse;
 use agent_circle::errors::AcError;
 use agent_circle::identity::Identity;
