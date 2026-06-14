@@ -2348,6 +2348,35 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
         }
     }
 
+    // ── Errors reference (S11R115) ───────────────────────────────
+    if should_run("errors") {
+        let codes = [
+            (
+                "E0001",
+                "IO error — file, directory, or stream access failure",
+            ),
+            (
+                "E0002",
+                "Identity error — key missing/malformed/DID verification failed",
+            ),
+            (
+                "E0003",
+                "Serialization error — JSON/serde encode/decode failure",
+            ),
+            (
+                "E0004",
+                "Key error — cryptographic key derivation/import/signing failure",
+            ),
+            (
+                "E0005",
+                "Network error — P2P transport/dial/listen/swarm failure",
+            ),
+        ];
+        for (code, desc) in &codes {
+            checks.push(("errors", "📖", format!("{}: {}", code, desc)));
+        }
+    }
+
     // ── Display ─────────────────────────────────────────────────
     if json {
         let items: Vec<serde_json::Value> = checks
