@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 200 轮敏捷路线图 (`ROADMAP.md`)：三化六性九维验收矩阵
+- **S01R12: Relay 中继节点实现** — `relay::Behaviour` 集成，节点可作为 Circuit Relay 为 NAT 后节点提供兜底连接
+- `daemon start --relay` CLI flag 启用以太坊中继模式
 - CI/CD pipeline (GitHub Actions)：fmt → clippy → test → build-release → deny → audit
 - Structured logging：`tracing` + JSON 输出 (daemon 模式)
 - Dynamic log level switching：SIGUSR1 热切换 (error↔warn↔info↔debug↔trace)

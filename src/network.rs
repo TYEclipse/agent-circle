@@ -1,15 +1,16 @@
 //! Network module — P2P swarm powered by libp2p
 //!
-//! Transports: QUIC + TCP
+//! Transports: QUIC + TCP + Relay (circuit)
 //! Discovery: mDNS (LAN) + Kademlia DHT (WAN)
 //! Chat: request/response (1-to-1) + GossipSub (group)
+//! Relay: enables NAT traversal when DCUtR hole-punching fails
 
 use crate::chat::{ChatRequest, ChatResponse};
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use futures::StreamExt;
 use libp2p::{
-    dcutr, gossipsub, identify, kad, mdns,
+    dcutr, gossipsub, identify, kad, mdns, relay,
     request_response::{self, Message},
     swarm::{NetworkBehaviour, SwarmEvent},
     yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
@@ -27,6 +28,7 @@ pub struct AgentCircleBehaviour {
     pub mdns: mdns::tokio::Behaviour,
     pub identify: identify::Behaviour,
     pub dcutr: dcutr::Behaviour,
+    pub relay: relay::Behaviour,
     pub chat: ChatBehaviour,
     pub gossip: gossipsub::Behaviour,
 }
@@ -35,12 +37,14 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
     let libp2p_keypair = ed25519_to_libp2p_keypair(id)?;
     let local_peer_id = PeerId::from(libp2p_keypair.public());
 
+    let relay_config = relay::Config::default();
+
     let mut swarm = SwarmBuilder::with_existing_identity(libp2p_keypair.clone())
         .with_tokio()
         .with_quic()
         .with_relay_client(libp2p::noise::Config::new, yamux::Config::default)
         .expect("relay transport")
-        .with_behaviour(move |_key, _relay_behaviour| {
+        .with_behaviour(move |key, _relay_client_behaviour| {
             let mut kademlia =
                 kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
             kademlia.set_mode(Some(kad::Mode::Server));
@@ -76,6 +80,7 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
                 mdns,
                 identify,
                 dcutr,
+                relay: relay::Behaviour::new(key.public().to_peer_id(), relay_config),
                 chat,
                 gossip,
             })
@@ -294,6 +299,22 @@ pub async fn run_daemon(id: &Identity, groups: &[String]) -> AcResult<()> {
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Kademlia(_)) => {}
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Dcutr(event)) => {
                 debug!(?event, "DCUtR");
+            }
+            // ── Relay: reservation request accepted ────────────────
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Relay(
+                relay::Event::ReservationReqAccepted {
+                    src_peer_id,
+                    renewed,
+                },
+            )) => {
+                info!(
+                    peer_id = %src_peer_id,
+                    renewed = renewed,
+                    "Relay reservation"
+                );
+            }
+            SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Relay(event)) => {
+                debug!(?event, "Relay");
             }
             _ => {}
         }
