@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description = "Agent Circle — shared types, protocol, identity"
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }

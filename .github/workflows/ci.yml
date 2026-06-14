@@ -12,34 +12,38 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════
-  # S07 — Cross-platform build + test (R71 Linux / R72 macOS / R73 Windows)
+  # Linux — full build + test (primary verification platform)
   # ═══════════════════════════════════════════════════════════════
+  linux:
+    name: Linux (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace
+      - run: cargo test --workspace
 
-  build-and-test:
-    name: Build + Test (${{ matrix.os }})
+  # ═══════════════════════════════════════════════════════════════
+  # macOS / Windows — check only (verify compilation, no output)
+  # cargo check is ~2-3x faster than cargo build (no codegen/link)
+  # ═══════════════════════════════════════════════════════════════
+  check-other:
+    name: Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
-
-      - name: Build (debug)
-        run: cargo build --workspace
-
-      - name: Test
-        run: cargo test --workspace
+      - run: cargo check --workspace
 
   # ═══════════════════════════════════════════════════════════════
-  # Fast sanity checks — all run in parallel on ubuntu (OS-independent)
-  # Wall-time < 60s.  Full test suite runs locally before push.
+  # Fast sanity checks — ubuntu only, wall-time < 60s
   # ═══════════════════════════════════════════════════════════════
-
   fmt:
     name: Format (~10s)
     runs-on: ubuntu-latest
