@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S02R19: 崩溃恢复 — PendingTracker SQLite 持久化** — `pending` 表记录所有飞行中消息，daemon 被 kill -9 后重启自动恢复未 ACK 消息并重新发送；Queue 统一打开一次复用；expire_pending() 定期清理过期 pending 条目；新增 6 个单元测试
 - **S02R18: 消息 TTL 与过期清理** — `ChatRequest.ttl`（默认 7 天），离线队列 `expire_before()` 自动清理过期消息；daemon 每 5 分钟自动 `prune_delivered()` + `expire_before()`；`agent-circle diag clean` CLI 手动清理
 - **S02R17: 全链路诊断** — `DiagCounters` 原子计数器追踪每条消息生命周期（发送/ACK/重试/失败/入队/重复），daemon 每 30s 自动输出送达率统计；`agent-circle diag queue` CLI 查看离线队列
 - **S02R16: 消息去重** — `DedupFilter` 按 `msg_id` 追踪已收消息，重传自动去重只发 ACK 不重复处理，结合 ACK+重试实现 effectively-once 语义

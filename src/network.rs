@@ -11,7 +11,7 @@ use crate::dedup::DedupFilter;
 use crate::diag::DiagCounters;
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
-use crate::message_queue;
+use crate::message_queue::Queue;
 use crate::reliability::{PendingTracker, MAX_RETRIES};
 use futures::StreamExt;
 use libp2p::{
@@ -194,6 +194,11 @@ fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypai
     ))
 }
 
+/// Convert OutboundRequestId to its underlying u64 for SQLite persistence.
+fn request_id_to_u64(id: request_response::OutboundRequestId) -> u64 {
+    unsafe { std::mem::transmute(id) }
+}
+
 // ── Daemon ─────────────────────────────────────────────────────────
 
 pub async fn run_daemon(
@@ -215,6 +220,11 @@ pub async fn run_daemon(
     info!("Agent Circle 守护进程已启动");
     info!(peer_id = %local_peer_id, relay_mode = relay_mode, "PeerId");
 
+    // Open the persistent queue once — used for both offline queue and
+    // PendingTracker crash-recovery persistence.
+    let queue =
+        Queue::open(data_dir).map_err(|e| AcError::Network(format!("无法打开队列: {e}")))?;
+
     let mut bootstrapped = false;
     let mut relay_registered_or_discovered = false;
     let mut pending = PendingTracker::new();
@@ -224,6 +234,71 @@ pub async fn run_daemon(
     let mut stats_timer = tokio::time::interval(std::time::Duration::from_secs(30));
     stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut tick_count: u64 = 0;
+
+    // ── Crash recovery: reload any persisted pending entries ──────
+    // These are messages that were in-flight (sent but not yet ACK'd)
+    // when the daemon was last killed.  Re-send them now.
+    {
+        let stored = queue.load_all_pending().unwrap_or_default();
+        if !stored.is_empty() {
+            info!(
+                count = stored.len(),
+                "🔄 崩溃恢复：重新发送 {} 条未ACK消息",
+                stored.len()
+            );
+            // Clean the stale rows first — we'll re-persist with new request_ids.
+            for sp in &stored {
+                let _ = queue.remove_pending(sp.request_id);
+            }
+            for sp in stored {
+                // Skip expired entries
+                if sp.ttl < chrono::Utc::now().timestamp() {
+                    info!(msg_id = sp.msg_id, "⏰ 已过期的pending消息，跳过恢复");
+                    continue;
+                }
+                let peer: PeerId = match sp.peer.parse() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let chat_req = ChatRequest {
+                    from: sp.from_did.clone(),
+                    content: sp.content.clone(),
+                    ts: sp.ts,
+                    msg_id: sp.msg_id,
+                    ttl: sp.ttl,
+                };
+                let req_id = swarm
+                    .behaviour_mut()
+                    .chat
+                    .send_request(&peer, chat_req.clone());
+                let rid_u64 = request_id_to_u64(req_id);
+                if let Err(e) = queue.push_pending(
+                    rid_u64,
+                    &sp.peer,
+                    &sp.from_did,
+                    &sp.content,
+                    sp.ts,
+                    sp.msg_id,
+                    sp.ttl,
+                    sp.retries,
+                ) {
+                    warn!(error = %e, "崩溃恢复持久化失败");
+                } else {
+                    pending.track(
+                        req_id,
+                        peer,
+                        sp.from_did,
+                        sp.content,
+                        sp.ts,
+                        sp.msg_id,
+                        sp.ttl,
+                    );
+                    counters.inc_sent();
+                    info!(peer = %sp.peer, msg_id = sp.msg_id, "♻️ 已恢复发送");
+                }
+            }
+        }
+    }
 
     loop {
         tokio::select! {
@@ -240,35 +315,47 @@ pub async fn run_daemon(
             } => {
                 info!(peer_id = %peer_id, connections = num_established, "已连接");
                 // Flush offline queue for this peer
-                if let Ok(q) = message_queue::Queue::open(data_dir) {
-                    let peer_str = peer_id.to_string();
-                    let pending_msgs = q.pending_for(&peer_str).unwrap_or_default();
-                    for entry in pending_msgs {
-                        info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
-                        let chat_req = ChatRequest {
-                            from: id.short_code.clone(),
-                            content: entry.content.clone(),
-                            ts: chrono::Utc::now().timestamp(),
-                            msg_id: crate::chat::new_msg_id(),
-                            ttl: entry.expires_at.unwrap_or(i64::MAX),
-                        };
-                        let req_id = swarm
-                            .behaviour_mut()
-                            .chat
-                            .send_request(&peer_id, chat_req.clone());
-                        pending.track(
-                            req_id,
-                            peer_id,
-                            id.short_code.clone(),
-                            entry.content.clone(),
-                            chat_req.ts,
-                            chat_req.msg_id,
-                            chat_req.ttl,
-                        );
-                        counters.inc_sent();
-                        let _ = q.mark_delivered(entry.id);
-                        info!(peer = %peer_str, "✅ 离线消息已发送 （等待ACK）");
+                let peer_str = peer_id.to_string();
+                let pending_msgs = queue.pending_for(&peer_str).unwrap_or_default();
+                for entry in pending_msgs {
+                    info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
+                    let chat_req = ChatRequest {
+                        from: id.short_code.clone(),
+                        content: entry.content.clone(),
+                        ts: chrono::Utc::now().timestamp(),
+                        msg_id: crate::chat::new_msg_id(),
+                        ttl: entry.expires_at.unwrap_or(i64::MAX),
+                    };
+                    let req_id = swarm
+                        .behaviour_mut()
+                        .chat
+                        .send_request(&peer_id, chat_req.clone());
+                    pending.track(
+                        req_id,
+                        peer_id,
+                        id.short_code.clone(),
+                        entry.content.clone(),
+                        chat_req.ts,
+                        chat_req.msg_id,
+                        chat_req.ttl,
+                    );
+                    // Persist to survive crashes
+                    let rid_u64 = request_id_to_u64(req_id);
+                    if let Err(e) = queue.push_pending(
+                        rid_u64,
+                        &peer_str,
+                        &id.short_code,
+                        &entry.content,
+                        chat_req.ts,
+                        chat_req.msg_id,
+                        chat_req.ttl,
+                        0,
+                    ) {
+                        warn!(error = %e, "持久化track失败");
                     }
+                    counters.inc_sent();
+                    let _ = queue.mark_delivered(entry.id);
+                    info!(peer = %peer_str, "✅ 离线消息已发送 （等待ACK）");
                 }
             }
 
@@ -330,6 +417,8 @@ pub async fn run_daemon(
                 },
             )) => {
                 if let Some(entry) = pending.ack(&request_id) {
+                    // Remove from crash-recovery persistence
+                    let _ = queue.remove_pending(request_id_to_u64(request_id));
                     info!(
                         peer = %peer,
                         content = %entry.content,
@@ -350,6 +439,7 @@ pub async fn run_daemon(
                 },
             )) => {
                 warn!(peer = %peer, error = ?error, "消息发送失败");
+                let old_rid = request_id_to_u64(request_id);
                 match pending.fail(&request_id) {
                     Some(entry) if entry.retries <= MAX_RETRIES => {
                         // Within budget — retry immediately
@@ -367,6 +457,21 @@ pub async fn run_daemon(
                             ttl: entry.ttl,
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
+                        let new_rid = request_id_to_u64(new_id);
+                        // Swap: remove old request_id, persist with new one
+                        let _ = queue.remove_pending(old_rid);
+                        if let Err(e) = queue.push_pending(
+                            new_rid,
+                            &peer.to_string(),
+                            &entry.from,
+                            &entry.content,
+                            entry.ts,
+                            entry.msg_id,
+                            entry.ttl,
+                            entry.retries,
+                        ) {
+                            warn!(error = %e, "重试持久化失败");
+                        }
                         pending.retrack(new_id, entry);
                         counters.inc_retried();
                     }
@@ -378,15 +483,12 @@ pub async fn run_daemon(
                             "📥 重试耗尽，存入离线队列"
                         );
                         counters.inc_failed();
-                        match message_queue::Queue::open(data_dir) {
-                            Ok(q) => {
-                                if let Err(e) = q.push_with_ttl(&peer.to_string(), &entry.content, Some(entry.ttl)) {
-                                    warn!(error = %e, "离线队列入队失败");
-                                } else {
-                                    counters.inc_queued();
-                                }
-                            }
-                            Err(e) => warn!(error = %e, "无法打开离线队列"),
+                        // Remove from pending persistence (now in offline queue)
+                        let _ = queue.remove_pending(old_rid);
+                        if let Err(e) = queue.push_with_ttl(&peer.to_string(), &entry.content, Some(entry.ttl)) {
+                            warn!(error = %e, "离线队列入队失败");
+                        } else {
+                            counters.inc_queued();
                         }
                     }
                     None => {
@@ -479,27 +581,27 @@ pub async fn run_daemon(
             } // end match → event arm
             _ = stats_timer.tick() => {
                 tick_count += 1;
-                let q_stats = message_queue::Queue::open(data_dir)
-                    .ok()
-                    .and_then(|q| q.stats().ok())
-                    .unwrap_or((0, 0, 0));
+                let q_stats = queue.stats().unwrap_or((0, 0, 0));
                 let snap = counters.snapshot(pending.len(), q_stats, started);
                 info!("{}", crate::diag::format_snapshot(&snap));
 
                 // Every 5 minutes (10 ticks × 30s): purge expired + delivered messages
                 if tick_count.is_multiple_of(10) {
-                    if let Ok(q) = message_queue::Queue::open(data_dir) {
-                        let now = chrono::Utc::now().timestamp();
-                        match q.expire_before(now) {
-                            Ok(n) if n > 0 => info!(expired = n, "🧹 已清理过期离线消息"),
-                            Ok(_) => {}
-                            Err(e) => warn!(error = %e, "过期清理失败"),
-                        }
-                        match q.prune_delivered() {
-                            Ok(n) if n > 0 => info!(pruned = n, "🧹 已清理已送达记录"),
-                            Ok(_) => {}
-                            Err(e) => warn!(error = %e, "已送达清理失败"),
-                        }
+                    let now = chrono::Utc::now().timestamp();
+                    match queue.expire_before(now) {
+                        Ok(n) if n > 0 => info!(expired = n, "🧹 已清理过期离线消息"),
+                        Ok(_) => {}
+                        Err(e) => warn!(error = %e, "过期清理失败"),
+                    }
+                    match queue.prune_delivered() {
+                        Ok(n) if n > 0 => info!(pruned = n, "🧹 已清理已送达记录"),
+                        Ok(_) => {}
+                        Err(e) => warn!(error = %e, "已送达清理失败"),
+                    }
+                    match queue.expire_pending(now) {
+                        Ok(n) if n > 0 => info!(expired = n, "🧹 已清理过期pending条目"),
+                        Ok(_) => {}
+                        Err(e) => warn!(error = %e, "pending过期清理失败"),
                     }
                 }
             }
