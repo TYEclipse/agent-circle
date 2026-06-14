@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **S02R26/R27: 99.9% 投递率验证 + 丢包模拟** — 升级压力测试：`--drop-rate` 发送端随机丢弃模拟丢包；延迟分布统计 (min/avg/max/p50/p95/p99)；进度百分比显示；`--output` 自动生成 JSON 验证报告文件；自动判定 PASS_R26 (≥99.9%) / PASS_R27 (丢包 ≥99.0%)
+- **S03R32: identity.rs 测试覆盖 → 100%** — 补充 9 个测试：decode_did_key 错误路径 (bad prefix/base58/multicodec/wrong length)、agent_card.verify 错误路径 (invalid proof encoding/length)、from_seed 确定性、to_seed_bytes 长度、verifying_key
+- **S03R33: storage.rs 测试覆盖 → 100%** — 补充 11 个测试：resolve_data_dir (default/override)、identity save/load (roundtrip/missing/wrong size)、card save/load、contacts add/list/duplicate、timeline save/load (roundtrip/missing)
 - **S02R24: 投递状态回调** — `chat send --track` 发送后等待 ACK/Failure 实时打印投递状态（✅ Delivered / ❌ Failed / ⏰ Pending）；`--timeout` 自定义超时（默认 30s）；`send_chat()` 现在返回 `OutboundRequestId`
 - **S02R22: 消息序列号 + 顺序保证** — `ChatRequest.seq` 发送端单调递增，`SequenceTracker` 接收端按序缓冲乱序消息，gap 填满后自动冲刷投递；断线重连时重置 per-peer 状态；新增 6 个单元测试
 - **S02R19: 崩溃恢复 — PendingTracker SQLite 持久化** — `pending` 表记录所有飞行中消息，daemon 被 kill -9 后重启自动恢复未 ACK 消息并重新发送；Queue 统一打开一次复用；expire_pending() 定期清理过期 pending 条目；新增 6 个单元测试

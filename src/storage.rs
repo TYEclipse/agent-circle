@@ -185,3 +185,117 @@ pub fn save_timeline(tl: &Timeline, data_dir: Option<&PathBuf>) -> AcResult<()> 
     fs::write(&path, json)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ac_storage_{}", rand::random::<u32>()));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn resolve_default_dir() {
+        let dir = resolve_data_dir(None).unwrap();
+        assert!(dir.ends_with(".agent-circle"));
+    }
+
+    #[test]
+    fn resolve_override_dir() {
+        let tmp = temp_dir();
+        let dir = resolve_data_dir(Some(&tmp)).unwrap();
+        assert_eq!(dir, tmp);
+    }
+
+    #[test]
+    fn identity_save_and_load() {
+        let tmp = temp_dir();
+        let id = Identity::generate();
+        save_identity(&id, Some(&tmp)).unwrap();
+        let loaded = load_identity(Some(&tmp)).unwrap().unwrap();
+        assert_eq!(loaded.did, id.did);
+        assert_eq!(loaded.short_code, id.short_code);
+    }
+
+    #[test]
+    fn identity_load_not_found() {
+        let tmp = temp_dir();
+        let result = load_identity(Some(&tmp)).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn identity_load_wrong_size() {
+        let tmp = temp_dir();
+        let path = tmp.join("identity.key");
+        std::fs::write(&path, [0u8; 16]).unwrap();
+        let result = load_identity(Some(&tmp));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn card_save_and_load() {
+        let tmp = temp_dir();
+        let id = Identity::generate();
+        let card = id
+            .create_card("TestBot", "h:test", "gpt", &["code".into()])
+            .unwrap();
+        save_card(&card, Some(&tmp)).unwrap();
+        let loaded = load_card(Some(&tmp)).unwrap().unwrap();
+        assert_eq!(loaded.name, "TestBot");
+        assert_eq!(loaded.capabilities, vec!["code"]);
+    }
+
+    #[test]
+    fn card_load_not_found() {
+        let tmp = temp_dir();
+        let result = load_card(Some(&tmp)).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn contacts_add_and_list() {
+        let tmp = temp_dir();
+        let contacts = load_contacts(Some(&tmp)).unwrap();
+        assert!(contacts.is_empty());
+
+        add_contact("alice", "peer1", "did:alice", Some(&tmp)).unwrap();
+        add_contact("bob", "peer2", "did:bob", Some(&tmp)).unwrap();
+
+        let contacts = load_contacts(Some(&tmp)).unwrap();
+        assert_eq!(contacts.len(), 2);
+        assert_eq!(contacts[0].name, "alice");
+        assert_eq!(contacts[1].peer_id, "peer2");
+    }
+
+    #[test]
+    fn contact_duplicate_rejected() {
+        let tmp = temp_dir();
+        add_contact("alice", "peer1", "did:a", Some(&tmp)).unwrap();
+        let result = add_contact("alice_dup", "peer1", "did:a", Some(&tmp));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn timeline_save_and_load() {
+        let tmp = temp_dir();
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        let node = Timeline::genesis(&id, "Hello timeline").unwrap();
+        tl.nodes.push(node);
+
+        save_timeline(&tl, Some(&tmp)).unwrap();
+        let loaded = load_timeline(Some(&tmp)).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.nodes[0].content, "Hello timeline");
+    }
+
+    #[test]
+    fn timeline_load_not_found() {
+        let tmp = temp_dir();
+        let tl = load_timeline(Some(&tmp)).unwrap();
+        assert!(tl.is_empty());
+    }
+}
