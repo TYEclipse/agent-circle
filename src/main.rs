@@ -10,6 +10,7 @@ mod errors;
 mod identity;
 mod keys;
 mod message_queue;
+mod metrics;
 mod network;
 mod plugin;
 mod plugin_registry;
@@ -103,6 +104,9 @@ enum Commands {
         #[arg(short, long)]
         json: bool,
     },
+
+    /// 性能指标暴露 — OpenMetrics/Prometheus 格式 (S11R116)
+    Metrics,
 }
 
 #[derive(Subcommand)]
@@ -480,6 +484,7 @@ async fn run() -> errors::AcResult<()> {
             DiagCmd::Status => cmd_daemon_status()?,
         },
         Commands::Doctor { check, json } => cmd_doctor(check.as_deref(), json)?,
+        Commands::Metrics => cmd_metrics()?,
     }
 
     Ok(())
@@ -2414,6 +2419,14 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
         println!("║  状态: {:<46} ║", overall);
         println!("╚══════════════════════════════════════════════════════════╝");
     }
+    Ok(())
+}
+
+// ── Metrics command (S11R116) ──────────────────────────────────────
+
+fn cmd_metrics() -> errors::AcResult<()> {
+    let output = metrics::collect()?;
+    print!("{output}");
     Ok(())
 }
 
