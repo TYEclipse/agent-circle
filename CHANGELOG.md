@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### S16 · 压力测试 + 性能 ✅
+
+- **S16R170: S16 回顾** — `docs/S16-retrospective.md` 闭合文档：10/10 完成，总进度 85%
+- **S16R163-169: 大容量压测 + 性能基线** — GossipSub 100-topic mesh，100K 时间线验证，二进制体积/冷启动/协议开销基准
+- **S16R162: 消息吞吐量基准** — JSON serde 63K/80K msg/s，ED25519 sign 3.5K sig/s，ACK 748K rtt/s
+- **S16R161: 并发连接压测** — 1000-task swarm，0 数据损坏
+
 ### S15 · TUI + UX 打磨 ✅
 
 - **S15R160: S15 回顾** — `docs/S15-retrospective.md` 闭合文档：10/10 完成，总进度 80%
