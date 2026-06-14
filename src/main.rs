@@ -108,6 +108,13 @@ enum ServiceCmd {
         /// 搜索关键词
         query: String,
     },
+    /// 协商服务能力（查询协议版本 + 参数格式）
+    Negotiate {
+        /// 目标 PeerId
+        peer_id: String,
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+    },
     /// 调用远程服务
     Call {
         /// 目标 PeerId
@@ -120,6 +127,9 @@ enum ServiceCmd {
         /// JSON 参数
         #[arg(default_value = "{}")]
         params: String,
+        /// 跳过能力协商，直接调用
+        #[arg(long)]
+        skip_negotiate: bool,
     },
 }
 
@@ -384,11 +394,16 @@ async fn run() -> errors::AcResult<()> {
         Commands::Service(cmd) => match cmd {
             ServiceCmd::List { verbose } => cmd_service_list(verbose)?,
             ServiceCmd::Search { query } => cmd_service_search(&query)?,
+            ServiceCmd::Negotiate {
+                peer_id,
+                service_id,
+            } => cmd_service_negotiate(&peer_id, &service_id)?,
             ServiceCmd::Call {
                 peer_id,
                 service_id,
                 method,
                 params,
+                skip_negotiate: _skip,
             } => cmd_service_call(&peer_id, &service_id, &method, &params)?,
         },
         Commands::Plugin(cmd) => match cmd {
@@ -1734,7 +1749,112 @@ fn cmd_service_call(
     let content = serde_json::to_string(&msg)?;
     println!("📡 调用 {}::{} → Peer {}", service_id, method, peer_id);
     println!("   参数: {}", content);
-    println!("   提示: 在 daemon 模式下，此消息将作为 ChatRequest.service 字段发送");
+    println!("   提示: 先用 `service negotiate` 查询可用能力，或用 `--skip-negotiate` 跳过协商");
+    Ok(())
+}
+
+fn cmd_service_negotiate(peer_id: &str, service_id: &str) -> errors::AcResult<()> {
+    use agent_circle_core::identity::{CapabilityStatement, ProtocolVersion};
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+
+    // Look up the peer's services in local cache
+    let peer_services: Vec<_> = registry
+        .all_services_with_meta()
+        .into_iter()
+        .filter(|(p, _, _)| p.starts_with(peer_id))
+        .collect();
+
+    if peer_services.is_empty() {
+        println!("⚠️  本地缓存中未找到 Peer {} 的服务", peer_id);
+        println!("   请先运行 daemon 发现服务, 或确认 PeerId 正确");
+        return Ok(());
+    }
+
+    // Find the specific service
+    let svc = peer_services.iter().find(|(_, s, _)| s.id == service_id);
+
+    // Build a synthetic CapabilityStatement from cached ServiceInfo
+    let statement = if let Some((_peer, svc, _last_seen)) = svc {
+        let versions = if svc.protocol_versions.is_empty() {
+            vec![ProtocolVersion {
+                version: "1.0.0".into(),
+                endpoint: svc.endpoint.clone(),
+                input_schema: svc.input_schema.clone().unwrap_or_default(),
+            }]
+        } else {
+            svc.protocol_versions
+                .iter()
+                .map(|v| ProtocolVersion {
+                    version: v.clone(),
+                    endpoint: svc.endpoint.clone(),
+                    input_schema: svc.input_schema.clone().unwrap_or_default(),
+                })
+                .collect()
+        };
+
+        CapabilityStatement {
+            service_id: svc.id.clone(),
+            versions,
+            accepted_formats: vec!["json".into()],
+            service_found: true,
+        }
+    } else {
+        CapabilityStatement {
+            service_id: service_id.into(),
+            versions: vec![],
+            accepted_formats: vec![],
+            service_found: false,
+        }
+    };
+
+    // ── Display negotiation result ──────────────────────────────────
+    println!();
+    println!("╔══════════════════════════════════════════════════════════╗");
+    println!("║  🔧 服务能力协商                                       ║");
+    println!("╠══════════════════════════════════════════════════════════╣");
+    println!("║  目标 Peer:  {:<37} ║", peer_id);
+    println!("║  服务 ID:    {:<37} ║", service_id);
+    println!("╠══════════════════════════════════════════════════════════╣");
+
+    if !statement.service_found {
+        println!("║  ⚠️  该 Peer 未提供此服务                              ║");
+        println!("║      可用的服务:");
+        for (_, svc, _) in &peer_services {
+            println!("║        • {} ({})", svc.id, svc.name);
+        }
+    } else {
+        println!(
+            "║  ✅ 服务可用 — {} 个协议版本:                          ║",
+            statement.versions.len()
+        );
+        for v in &statement.versions {
+            println!("║     {}  →  {:<39} ║", v.version, v.endpoint);
+        }
+        println!("╠══════════════════════════════════════════════════════════╣");
+        println!(
+            "║  接受格式:  {:<37} ║",
+            statement.accepted_formats.join(", ")
+        );
+        if let Some(first) = statement.versions.first() {
+            if !first.input_schema.is_empty() && first.input_schema != "{}" {
+                println!("║  参数 Schema:                                         ║");
+                for line in first.input_schema.lines().take(5) {
+                    println!("║    {}", line);
+                }
+            }
+        }
+    }
+    println!("╚══════════════════════════════════════════════════════════╝");
+    println!();
+    if statement.service_found {
+        println!("💡 协商成功！使用以下命令调用:");
+        println!(
+            "   agent-circle service call {} {} <METHOD> '{{\"key\":\"value\"}}'",
+            peer_id, service_id
+        );
+    }
     Ok(())
 }
 
