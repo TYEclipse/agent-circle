@@ -116,6 +116,12 @@ enum ChatCmd {
         /// 每条消息等待 ACK 的超时秒数 (默认 5s)
         #[arg(long, default_value = "5")]
         timeout: u64,
+        /// 丢包率模拟 (0.0–1.0), 发送端随机丢弃
+        #[arg(long, default_value = "0.0")]
+        drop_rate: f64,
+        /// 结果报告输出路径 (JSON)
+        #[arg(long)]
+        output: Option<String>,
     },
 }
 
@@ -282,7 +288,12 @@ async fn run() -> errors::AcResult<()> {
                 peer_id,
                 count,
                 timeout,
-            } => cmd_chat_pressure_test(&peer_id, count, timeout).await?,
+                drop_rate,
+                output,
+            } => {
+                cmd_chat_pressure_test(&peer_id, count, timeout, drop_rate, output.as_deref())
+                    .await?
+            }
         },
         Commands::Group(cmd) => match cmd {
             GroupCmd::Create { name } => cmd_group_create(&name)?,
@@ -604,12 +615,17 @@ async fn cmd_chat_pressure_test(
     peer_id_str: &str,
     count: usize,
     timeout_secs: u64,
+    drop_rate: f64,
+    output_path: Option<&str>,
 ) -> errors::AcResult<()> {
     use libp2p::request_response::{self, Message};
     use libp2p::swarm::SwarmEvent;
     use libp2p::PeerId;
+    use rand::Rng;
     use std::str::FromStr;
     use std::time::Instant;
+
+    let drop_rate = drop_rate.clamp(0.0, 1.0);
 
     let peer_id = PeerId::from_str(peer_id_str)
         .map_err(|e| errors::AcError::Network(format!("无效 PeerId: {e}")))?;
@@ -642,22 +658,41 @@ async fn cmd_chat_pressure_test(
         .map_err(|e| errors::AcError::Network(format!("dial 失败: {e}")))?;
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-    println!("🔫 压力测试 — {count} 条消息, 每条约 {timeout_secs}s 超时");
+    if drop_rate > 0.0 {
+        println!(
+            "🔫 压力测试 — {count} 条消息, 超时 {timeout_secs}s, 丢包率 {:.0}%",
+            drop_rate * 100.0
+        );
+    } else {
+        println!("🔫 压力测试 — {count} 条消息, 超时 {timeout_secs}s");
+    }
 
     let mut delivered: usize = 0;
     let mut failed: usize = 0;
     let mut timeout_expired: usize = 0;
+    let mut dropped: usize = 0;
+    let mut latencies_ms: Vec<u64> = Vec::with_capacity(count);
     let total_start = Instant::now();
+    let mut rng = rand::thread_rng();
 
     for i in 1..=count {
-        // Send
-        let msg =
-            format!("pressure-test #{i}: 这是一条压力测试消息，用于验证 P2P 消息投递可靠性。");
+        // Drop? (simulated packet loss)
+        if drop_rate > 0.0 && rng.r#gen::<f64>() < drop_rate {
+            dropped += 1;
+            if count <= 20 || i % 10 == 0 {
+                print!("✂");
+            }
+            if count > 20 && i % 50 == 0 {
+                print!("[{dropped}]");
+            }
+            continue;
+        }
+
+        let msg = format!("bench-{i:05}: P2P 消息投递可靠性验证 (S02R26)");
         let request_id = network::send_chat(&mut swarm, peer_id, &my_did, &msg);
         let sent_at = Instant::now();
         let deadline = Instant::now() + std::time::Duration::from_secs(timeout_secs);
 
-        // Wait for ACK or failure
         let mut acked = false;
         loop {
             let now = Instant::now();
@@ -676,11 +711,12 @@ async fn cmd_chat_pressure_test(
                                 ..
                             }
                         )) if rid == request_id => {
+                            let ms = sent_at.elapsed().as_millis() as u64;
+                            latencies_ms.push(ms);
                             delivered += 1;
                             acked = true;
-                            let ms = sent_at.elapsed().as_millis();
                             if count <= 20 || i % 10 == 0 {
-                                print!(" #{i}:{ms}ms ✓");
+                                print!(" #{i}:{ms}ms");
                             }
                             break;
                         }
@@ -710,42 +746,128 @@ async fn cmd_chat_pressure_test(
             timeout_expired += 1;
         }
 
-        // Progress dot for large counts
-        if count > 20 && i % 10 == 0 {
-            println!();
+        if count > 20 && i % 10 == 0 && i % 50 == 0 {
+            let pct = (i as f64 / count as f64) * 100.0;
+            println!(" {pct:.0}%");
         }
     }
     println!();
 
+    // ── Stats ────────────────────────────────────────────────────
     let elapsed = total_start.elapsed();
+    let sent = count - dropped;
     let total = delivered + failed + timeout_expired;
-    let rate = if total > 0 {
-        (delivered as f64 / total as f64) * 100.0
+    let rate = if sent > 0 {
+        (delivered as f64 / sent as f64) * 100.0
     } else {
         0.0
     };
 
+    let (lat_min, lat_max, lat_avg, lat_p50, lat_p95, lat_p99) = if !latencies_ms.is_empty() {
+        let mut sorted = latencies_ms.clone();
+        sorted.sort_unstable();
+        let min = sorted[0];
+        let max = sorted[sorted.len() - 1];
+        let avg = sorted.iter().sum::<u64>() as f64 / sorted.len() as f64;
+        let p50 = sorted[(sorted.len() as f64 * 0.50) as usize];
+        let p95 = sorted[(sorted.len() as f64 * 0.95).min((sorted.len() - 1) as f64) as usize];
+        let p99 = sorted[(sorted.len() as f64 * 0.99).min((sorted.len() - 1) as f64) as usize];
+        (min, max, avg, p50, p95, p99)
+    } else {
+        (0, 0, 0.0, 0, 0, 0)
+    };
+
     println!();
-    println!("══════════════════════════════════════");
-    println!("  压力测试结果");
-    println!("══════════════════════════════════════");
-    println!("  消息总数:    {count}");
+    println!("══════════════════════════════════════════");
+    println!("  S02R26/R27 投递可靠性验证报告");
+    println!("══════════════════════════════════════════");
+    println!(
+        "  测试时间:    {}",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+    );
+    println!("  目标 Peer:   {peer_id}");
+    println!("  计划发送:    {count}");
+    if dropped > 0 {
+        println!(
+            "  ✂ 模拟丢包:  {dropped} ({:.1}%)",
+            (dropped as f64 / count as f64) * 100.0
+        );
+    }
+    println!("  实际发送:    {sent}");
     println!("  ✅ 已送达:    {delivered} ({:.1}%)", rate);
     println!("  ❌ 失败:      {failed}");
     println!("  ⏰ 待确认:    {timeout_expired}");
+    println!("──────────────────────────────────────────");
+    println!("  延迟 (ms):   min={lat_min}  avg={lat_avg:.0}  max={lat_max}");
+    println!("               p50={lat_p50}  p95={lat_p95}  p99={lat_p99}");
+    println!("──────────────────────────────────────────");
     println!("  总耗时:       {:.1}s", elapsed.as_secs_f64());
     println!(
         "  吞吐量:       {:.1} msg/s",
         total as f64 / elapsed.as_secs_f64().max(0.001)
     );
-    println!("══════════════════════════════════════");
+    println!("══════════════════════════════════════════");
 
-    if rate >= 99.9 {
-        println!("🎯 99.9% 投递率达成！");
+    // Grade
+    if drop_rate <= 0.0 && rate >= 99.9 {
+        println!("🎯 R26 PASS — 稳定网络 99.9% 投递率达成！");
+    } else if drop_rate > 0.0 && rate >= 99.0 {
+        println!(
+            "✅ R27 PASS — {:.0}% 丢包环境 ≥99.0% 投递率达成！",
+            drop_rate * 100.0
+        );
     } else if rate >= 99.0 {
-        println!("⚠️  未达 99.9%，可尝试增加 --count 或调整网络");
+        println!("⚠️  未达 99.9%，可增加 --count 或调整网络");
     } else {
         println!("❌ 投递率较低，检查网络和对方 daemon 是否运行");
+    }
+
+    // ── Write report ─────────────────────────────────────────────
+    let report = serde_json::json!({
+        "test": "S02R26/R27",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "target_peer": peer_id_str,
+        "parameters": {
+            "count": count,
+            "timeout_secs": timeout_secs,
+            "drop_rate": drop_rate,
+        },
+        "results": {
+            "sent": sent,
+            "delivered": delivered,
+            "failed": failed,
+            "timeout": timeout_expired,
+            "dropped_simulated": dropped,
+            "delivery_rate_pct": rate,
+            "latency_ms": {
+                "min": lat_min,
+                "max": lat_max,
+                "avg": lat_avg,
+                "p50": lat_p50,
+                "p95": lat_p95,
+                "p99": lat_p99,
+            },
+            "elapsed_secs": elapsed.as_secs_f64(),
+            "throughput_msg_per_sec": total as f64 / elapsed.as_secs_f64().max(0.001),
+        },
+        "verdict": if drop_rate <= 0.0 && rate >= 99.9 {
+            "PASS_R26"
+        } else if drop_rate > 0.0 && rate >= 99.0 {
+            "PASS_R27"
+        } else if rate >= 99.0 {
+            "WARN_BELOW_99_9"
+        } else {
+            "FAIL"
+        }
+    });
+
+    let output_path = output_path.unwrap_or_else(|| {
+        let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        &*Box::leak(format!("S02R26-report-{ts}.json").into_boxed_str())
+    });
+    match std::fs::write(output_path, serde_json::to_string_pretty(&report)?) {
+        Ok(()) => println!("\n📄 报告已保存: {output_path}"),
+        Err(e) => eprintln!("\n⚠️  报告保存失败: {e}"),
     }
 
     Ok(())
