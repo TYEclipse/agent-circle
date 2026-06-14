@@ -16,7 +16,7 @@ use crate::reliability::{PendingTracker, MAX_RETRIES};
 use crate::sequence::SequenceTracker;
 use futures::StreamExt;
 use libp2p::{
-    dcutr, gossipsub, identify, kad,
+    connection_limits, dcutr, gossipsub, identify, kad,
     kad::{Record, RecordKey},
     mdns, relay,
     request_response::{self, Message},
@@ -43,6 +43,7 @@ pub struct AgentCircleBehaviour {
     pub relay: relay::Behaviour,
     pub chat: ChatBehaviour,
     pub gossip: gossipsub::Behaviour,
+    pub connection_limits: connection_limits::Behaviour,
 }
 
 pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
@@ -95,6 +96,13 @@ pub fn build_swarm(id: &Identity) -> AcResult<Swarm<AgentCircleBehaviour>> {
                 relay: relay::Behaviour::new(key.public().to_peer_id(), relay_config),
                 chat,
                 gossip,
+                connection_limits: connection_limits::Behaviour::new(
+                    connection_limits::ConnectionLimits::default()
+                        .with_max_pending_incoming(Some(10))
+                        .with_max_pending_outgoing(Some(10))
+                        .with_max_established_incoming(Some(50))
+                        .with_max_established_outgoing(Some(50)),
+                ),
             })
         })
         .map_err(|e| AcError::Network(format!("behaviour: {e}")))?
