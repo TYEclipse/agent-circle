@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S04R41–R46: cargo fuzz 集成 + 4 个 fuzz targets** — `fuzz/`：`cargo +nightly fuzz` 脚手架，4 个 fuzz target：json_deser (ChatRequest/ChatResponse/AgentCard/TimelineNode/Timeline 反序列化)、did_parse (decode_did_key)、timeline_verify (Timeline::verify)、agent_card_verify (AgentCard::verify)；所有 target 保证任意输入不 panic
 - **S03R40: S03 回顾文档** — `S03_RETROSPECTIVE.md`：覆盖率总览、经验教训、风险与延期、S04 准备清单
 - **S03R39: 测试数据工厂 (TestFixtures)** — `tests/common/fixtures.rs`：random_identity、seeded_identity、valid_chat_request、chat_request_seq、empty/zeroed_chat_request、random_agent_card、agent_card_for、genesis_node、empty/multi_node_timeline、invalid_did、malformed_signature；集成测试已重构使用 fixtures
 - **S03R36: timeline.rs 测试覆盖 → 100%** — 补充 15 个测试：空/默认 timeline、空验证、空追加、确定性 hash、不同内容不同 hash、id/parent 篡改检测、serde 往返、内部 hash_node/signing_payload 函数、len 计数、跨身份签名伪造检测

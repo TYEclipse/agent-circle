@@ -1,0 +1,42 @@
+[package]
+name = "agent-circle-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.agent-circle]
+path = ".."
+
+[[bin]]
+name = "json_deser"
+path = "fuzz_targets/json_deser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "did_parse"
+path = "fuzz_targets/did_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "timeline_verify"
+path = "fuzz_targets/timeline_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "agent_card_verify"
+path = "fuzz_targets/agent_card_verify.rs"
+test = false
+doc = false
+bench = false
