@@ -342,6 +342,52 @@ pub fn save_publication_history(history: &PublicationHistory, data_dir: &Path) -
     Ok(())
 }
 
+// ── Publication notifications (S13R133) ──────────────────────────
+
+use std::collections::HashMap;
+
+/// Notification manifest: maps service_id → list of unread publication IDs.
+type Notifications = HashMap<String, Vec<String>>;
+
+fn notifications_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("notifications.json")
+}
+
+/// Load the notification manifest. Returns empty map if not found.
+pub fn load_notifications(data_dir: &Path) -> AcResult<Notifications> {
+    let path = notifications_path(data_dir);
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let json = std::fs::read_to_string(&path)?;
+    let n: Notifications = serde_json::from_str(&json)?;
+    Ok(n)
+}
+
+/// Save the notification manifest.
+pub fn save_notifications(notifications: &Notifications, data_dir: &Path) -> AcResult<()> {
+    let path = notifications_path(data_dir);
+    let json = serde_json::to_string_pretty(notifications)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Add a publication ID to the notification list for a service.
+pub fn notify_subscriber(data_dir: &Path, service_id: &str, publication_id: &str) -> AcResult<()> {
+    let mut n = load_notifications(data_dir)?;
+    n.entry(service_id.to_string())
+        .or_default()
+        .push(publication_id.to_string());
+    save_notifications(&n, data_dir)
+}
+
+/// Clear notifications for a service (mark as read).
+pub fn clear_notifications(data_dir: &Path, service_id: &str) -> AcResult<()> {
+    let mut n = load_notifications(data_dir)?;
+    n.remove(service_id);
+    save_notifications(&n, data_dir)
+}
+
 #[cfg(test)]
 mod publication_storage_tests {
     use super::*;
