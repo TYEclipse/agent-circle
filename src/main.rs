@@ -2201,23 +2201,81 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
         }
     }
 
-    // ── Storage check ───────────────────────────────────────────
+    // ── Storage check (S11R113 — integrity validation) ──────────
     if should_run("storage") {
         if data_dir.exists() {
-            let card_ok = data_dir.join("card.json").exists();
-            let contacts_ok = data_dir.join("contacts.json").exists();
-            let svc_ok = data_dir.join("services.json").exists();
-            checks.push((
-                "storage",
-                "✅",
-                format!(
-                    "card.json {} · contacts.json {} · services.json {} · 路径: {}",
-                    if card_ok { "✓" } else { "✗" },
-                    if contacts_ok { "✓" } else { "✗" },
-                    if svc_ok { "✓" } else { "✗" },
-                    data_dir.display()
-                ),
-            ));
+            let mut parts: Vec<String> = Vec::new();
+
+            // card.json
+            let card_path = data_dir.join("card.json");
+            let card_ok = card_path.exists();
+            parts.push(format!("card.json {}", if card_ok { "✓" } else { "✗" }));
+
+            // contacts.json — load + validate entries
+            let contacts_path = data_dir.join("contacts.json");
+            if contacts_path.exists() {
+                match storage::load_contacts(data_dir_opt()) {
+                    Ok(contacts) => {
+                        let with_name = contacts.iter().filter(|c| !c.name.is_empty()).count();
+                        parts.push(format!(
+                            "contacts.json ✓ ({} entries, {} named)",
+                            contacts.len(),
+                            with_name
+                        ));
+                    }
+                    Err(_) => parts.push("contacts.json ✗ (parse error)".into()),
+                }
+            } else {
+                parts.push("contacts.json ✗".into());
+            }
+
+            // timeline.json — load + verify
+            let tl_path = data_dir.join("timeline.json");
+            if tl_path.exists() {
+                match storage::load_timeline(data_dir_opt()) {
+                    Ok(tl) => match tl.verify() {
+                        Ok(()) => {
+                            parts.push(format!("timeline.json ✓ ({} posts, verified)", tl.len()))
+                        }
+                        Err(e) => parts.push(format!(
+                            "timeline.json ⚠ ({} posts, verify fail: {})",
+                            tl.len(),
+                            e
+                        )),
+                    },
+                    Err(_) => parts.push("timeline.json ✗ (parse error)".into()),
+                }
+            } else {
+                parts.push("timeline.json —".into());
+            }
+
+            // services.json
+            let svc_path = data_dir.join("services.json");
+            if svc_path.exists() {
+                match service_discovery::load_registry(&data_dir) {
+                    Ok(r) => parts.push(format!(
+                        "services.json ✓ ({} peers / {} svc)",
+                        r.peer_count(),
+                        r.service_count()
+                    )),
+                    Err(_) => parts.push("services.json ✗ (parse error)".into()),
+                }
+            } else {
+                parts.push("services.json ✗".into());
+            }
+
+            let status = if parts
+                .iter()
+                .any(|p| p.contains('✗') || p.contains("parse error"))
+            {
+                "❌"
+            } else if parts.iter().any(|p| p.contains("⚠")) {
+                "⚠️"
+            } else {
+                "✅"
+            };
+
+            checks.push(("storage", status, parts.join(" · ")));
         } else {
             checks.push((
                 "storage",
