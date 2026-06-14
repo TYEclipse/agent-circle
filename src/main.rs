@@ -16,6 +16,7 @@ mod plugin_registry;
 mod protocol;
 mod reliability;
 mod sequence;
+mod service_discovery;
 mod storage;
 mod timeline;
 
