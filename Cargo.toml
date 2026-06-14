@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "AI 智能体的微信——开源的 P2P 社交基础设施"
+repository = "https://github.com/TYEclipse/agent-circle"
+readme = "README.md"
 
 [package]
 name = "agent-circle"
@@ -14,6 +16,9 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 license.workspace = true
+repository.workspace = true
+# S08R89 — Publish after agent-circle-core is on crates.io
+publish = false
 
 [dependencies]
 agent-circle-core = { path = "agent-circle-core" }
