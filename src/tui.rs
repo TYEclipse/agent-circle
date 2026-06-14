@@ -5,7 +5,9 @@
 use crate::storage;
 use crate::timeline::Timeline;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -29,6 +31,13 @@ enum View {
     Timeline,
     /// Group chat list.
     Groups,
+}
+
+/// Color theme.
+#[derive(Clone, PartialEq, Debug)]
+enum Theme {
+    Dark,
+    Light,
 }
 
 /// A chat message bubble.
@@ -66,6 +75,10 @@ pub struct App {
     notifications: Vec<String>,
     /// Countdown timer for notification display (render ticks).
     notification_timer: usize,
+    /// Current theme.
+    theme: Theme,
+    /// Accessibility mode — disables color, adds screen-reader hints.
+    accessible: bool,
     /// Whether the user has exited.
     should_quit: bool,
 }
@@ -87,6 +100,8 @@ impl App {
             group_index: 0,
             notifications: Vec::new(),
             notification_timer: 0,
+            theme: Theme::Dark,
+            accessible: false,
             should_quit: false,
         }
     }
@@ -135,6 +150,43 @@ impl App {
         } else {
             false
         }
+    }
+
+    /// Toggle theme between dark and light.
+    fn toggle_theme(&mut self) {
+        self.theme = match self.theme {
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::Dark,
+        };
+    }
+
+    /// Get accent color based on current theme.
+    #[allow(dead_code)]
+    fn accent_color(&self) -> Color {
+        if self.accessible {
+            return Color::White;
+        }
+        match self.theme {
+            Theme::Dark => Color::Cyan,
+            Theme::Light => Color::Blue,
+        }
+    }
+
+    /// Get dim color based on current theme.
+    fn dim_color(&self) -> Color {
+        if self.accessible {
+            return Color::White;
+        }
+        match self.theme {
+            Theme::Dark => Color::DarkGray,
+            Theme::Light => Color::Gray,
+        }
+    }
+
+    /// Check if a11y mode is active (no color, just text).
+    #[allow(dead_code)]
+    fn a11y(&self) -> bool {
+        self.accessible
     }
 
     /// Move selection up (menu, contact list, or chat scroll).
@@ -266,9 +318,45 @@ fn run_app<B: ratatui::backend::Backend>(
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+
+            // ── Global shortcuts (work from any view) ──
+            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+            match key.code {
+                KeyCode::Char('q') if ctrl => {
+                    app.should_quit = true;
+                    return Ok(());
+                }
+                KeyCode::Char('c') if ctrl => {
+                    app.view = View::Contacts;
+                    app.contact_index = 0;
+                    app.contacts = load_contacts();
+                    continue;
+                }
+                KeyCode::Char('t') if ctrl => {
+                    app.view = View::Timeline;
+                    app.timeline_scroll = 0;
+                    app.timeline = load_timeline();
+                    continue;
+                }
+                KeyCode::Char('g') if ctrl => {
+                    app.view = View::Groups;
+                    app.group_index = 0;
+                    continue;
+                }
+                KeyCode::F(5) => {
+                    app.toggle_theme();
+                    continue;
+                }
+                KeyCode::F(1) => {
+                    app.accessible = !app.accessible;
+                    continue;
+                }
+                _ => {}
+            }
+
             match &app.view {
                 View::Home => match key.code {
-                    KeyCode::Char('q') => {
+                    KeyCode::Char('q') | KeyCode::Esc => {
                         app.should_quit = true;
                         return Ok(());
                     }
@@ -457,13 +545,22 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         View::Timeline => "j/k ↑↓ 滚动  |  Esc 返回",
         View::Groups => "j/k ↑↓ 选群  |  Enter 进入群聊  |  Esc 返回",
     };
+    let theme_hint = match app.theme {
+        Theme::Dark => "🌙",
+        Theme::Light => "☀️",
+    };
+    let a11y_hint = if app.accessible { " ♿" } else { "" };
     let footer_text = vec![Line::from(Span::styled(
         format!(
-            " Agent Circle v{}  |  P2P 社交基础设施  |  {} ",
+            " Agent Circle v{}  |  P2P 社交基础设施  |  {}  | F5{} F1♿  |  Ctrl+T/C/G/Q: 快速导航 ",
             env!("CARGO_PKG_VERSION"),
             footer_hint,
+            theme_hint,
         ),
         Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+    )), Line::from(Span::styled(
+        format!(" {}{}", footer_hint, a11y_hint),
+        Style::default().fg(app.dim_color()).add_modifier(Modifier::DIM),
     ))];
     let footer = Paragraph::new(Text::from(footer_text))
         .alignment(Alignment::Center)
