@@ -5,6 +5,7 @@
 mod chat;
 mod errors;
 mod identity;
+mod message_queue;
 mod network;
 mod storage;
 mod timeline;
@@ -374,7 +375,8 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
         tracing::info!("🔁 中继模式已启用 — 本节点将作为 Relay 为 NAT 后节点提供兜底连接");
     }
 
-    network::run_daemon(&id, groups, relay_mode).await
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    network::run_daemon(&id, groups, relay_mode, &data_dir).await
 }
 
 fn cmd_daemon_status() -> errors::AcResult<()> {
