@@ -11,6 +11,7 @@ pub mod identity;
 pub mod keys;
 pub mod message_queue;
 pub mod network;
+pub mod plugin;
 pub mod protocol;
 pub mod reliability;
 pub mod sequence;

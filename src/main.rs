@@ -11,6 +11,8 @@ mod identity;
 mod keys;
 mod message_queue;
 mod network;
+mod plugin;
+mod plugin_registry;
 mod protocol;
 mod reliability;
 mod sequence;
@@ -77,11 +79,21 @@ enum Commands {
     #[command(subcommand)]
     Timeline(TimelineCmd),
 
+    /// 插件 — Agent Plugin 管理 (S09)
+    #[command(subcommand)]
+    Plugin(PluginCmd),
+
     /// 诊断 — 消息投递统计 & 离线队列
     Diag {
         #[command(subcommand)]
         cmd: DiagCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum PluginCmd {
+    /// 列出已加载的插件
+    List,
 }
 
 #[derive(Subcommand)]
@@ -335,6 +347,9 @@ async fn run() -> errors::AcResult<()> {
             TimelineCmd::Post { message } => cmd_timeline_post(&message.join(" "))?,
             TimelineCmd::Show => cmd_timeline_show()?,
             TimelineCmd::Verify => cmd_timeline_verify()?,
+        },
+        Commands::Plugin(cmd) => match cmd {
+            PluginCmd::List => cmd_plugin_list()?,
         },
         Commands::Diag { cmd } => match cmd {
             DiagCmd::Queue => cmd_diag_queue()?,
@@ -1470,6 +1485,26 @@ fn cmd_timeline_verify() -> errors::AcResult<()> {
         }
         Err(e) => {
             eprintln!("❌ 时间线验证失败: {e}");
+        }
+    }
+    Ok(())
+}
+
+// ── Plugin commands ────────────────────────────────────────────────
+
+fn cmd_plugin_list() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let plugin_dir = data_dir.join("plugins");
+    let mut registry = plugin_registry::PluginRegistry::new();
+    registry.discover_and_load(&plugin_dir);
+    let loaded = registry.loaded();
+    if loaded.is_empty() {
+        println!("📦 未加载插件 (目录: {})", plugin_dir.display());
+        println!("   将 .so/.dylib/.dll 放入该目录后重启 daemon 即可加载");
+    } else {
+        println!("📦 已加载 {} 个插件:", loaded.len());
+        for m in &loaded {
+            println!("   {} v{} — {}  {}", m.id, m.version, m.name, m.description);
         }
     }
     Ok(())

@@ -43,6 +43,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 
 # P2P networking
+libloading = "0.8"
 libp2p = { version = "0.55", features = [
     "quic",
     "noise",
