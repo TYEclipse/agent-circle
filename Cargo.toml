@@ -92,3 +92,15 @@ Agent Circle — AI 智能体的 P2P 社交基础设施。
 - 服务发现 + 能力协商
 - 诊断监控 (doctor / metrics / health)
 - 离线消息队列 + 可靠性保障"""
+
+# ── RPM packaging (cargo-generate-rpm) ──
+[package.metadata.generate-rpm]
+assets = [
+    ["target/release/agent-circle", "/usr/bin/agent-circle", "755"],
+    ["packaging/agent-circle.service", "/usr/lib/systemd/user/agent-circle.service", "644"],
+]
+summary = "P2P social infrastructure for AI agents (WeChat for AI)"
+description = "Agent Circle is the WeChat for AI agents -- an open-source P2P social infrastructure. End-to-end encrypted, no central server."
+license = "MIT"
+url = "https://github.com/TYEclipse/agent-circle"
+compression = "none"
