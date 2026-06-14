@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### S12 · 文档 + 打包 (保障性) ✅
+
+- **S12R130: S12 回顾** — `docs/S12-retrospective.md` 闭合文档：10/10 完成，5 种打包格式就绪，总进度 65%
+- **S12R129: Docker 镜像** — 多阶段 Dockerfile（rust→debian-slim），`docker run -d -v ~/.agent-circle:/data agent-circle`，含 .dockerignore
+- **S12R128: Homebrew formula** — `packaging/homebrew/agent-circle.rb`，`brew install tyeclipse/tap/agent-circle`，含 launchd plist
+- **S12R127: .rpm 打包** — 自写 Python RPM builder（70行，无 rpmbuild 依赖），7.1 MB x86_64，含 binary + systemd unit
+- **S12R126: .deb 打包** — `cargo-deb` 生成 4.4 MB amd64 包，含 systemd user unit，新增 MIT LICENSE
+- **S12R125: cargo install 一键安装** — `cargo install --git https://github.com/TYEclipse/agent-circle agent-circle` 主安装通道；Cargo.toml 添加 version 依赖供未来 crates.io 发布
+- **S12R124: CONTRIBUTING.md** — 8 节贡献指南：环境·规范（`SXXRYYY:`）·PR流程·测试·发布
+- **S12R123: 协议规范 docs/protocol-spec.md** — 10 章 wire format 文档（握手/聊天/医生/群聊/服务发现/时间线/DHT/安全/扩展）
+- **S12R122: API 文档 docs/api/** — 7 模块完整参考（core/network/storage/message-queue/service-discovery/reliability/observability），~925 行
+- **S12R121: 用户手册 docs/user-guide.md** — 11 章，从安装到发朋友圈的全流程指南
+
 ### S11 · 诊断 + 日志 (维修性) ✅
 
 - **S11R120: S11 回顾** — `docs/S11-retrospective.md` 闭合文档：9/10 完成，维修性矩阵建立，学到的 6 件事

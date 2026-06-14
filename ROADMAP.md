@@ -274,7 +274,7 @@
 | 127 | `.rpm` 打包 | ✅ 7.1 MB x86_64 — Python RPM builder (无 rpmbuild 依赖) |
 | 128 | Homebrew formula | ✅ 公式 + launchd plist |
 | 129 | Docker 镜像 | ✅ 多阶段 Dockerfile — GFW 限制未能本地 build，CI ready |
-| 130 | S12 回顾 | Sprint 回顾文档 |
+| 130 | S12 回顾 | ✅ Sprint 回顾文档 |
 
 ---
 
