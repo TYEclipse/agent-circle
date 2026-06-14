@@ -27,6 +27,8 @@ enum View {
     Chat(usize),
     /// Timeline / 朋友圈 view.
     Timeline,
+    /// Group chat list.
+    Groups,
 }
 
 /// A chat message bubble.
@@ -58,6 +60,8 @@ pub struct App {
     timeline: Timeline,
     /// Scroll offset for timeline view.
     timeline_scroll: usize,
+    /// Selected group index in the groups view.
+    group_index: usize,
     /// Whether the user has exited.
     should_quit: bool,
 }
@@ -76,6 +80,7 @@ impl App {
             scroll_offset: 0,
             timeline,
             timeline_scroll: 0,
+            group_index: 0,
             should_quit: false,
         }
     }
@@ -129,6 +134,11 @@ impl App {
                     self.timeline_scroll += 1;
                 }
             }
+            View::Groups => {
+                if self.group_index > 0 {
+                    self.group_index -= 1;
+                }
+            }
         }
     }
 
@@ -156,6 +166,11 @@ impl App {
             View::Timeline => {
                 if self.timeline_scroll > 0 {
                     self.timeline_scroll -= 1;
+                }
+            }
+            View::Groups => {
+                if self.group_index + 1 < 5 {
+                    self.group_index += 1;
                 }
             }
         }
@@ -237,6 +252,10 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.contact_index = 0;
                             app.contacts = load_contacts();
                         }
+                        2 => {
+                            app.view = View::Groups;
+                            app.group_index = 0;
+                        }
                         3 => {
                             app.view = View::Timeline;
                             app.timeline_scroll = 0;
@@ -285,6 +304,17 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Up | KeyCode::Char('k') => app.previous(),
                     KeyCode::Down | KeyCode::Char('j') => app.next(0),
+                    _ => {}
+                },
+                View::Groups => match key.code {
+                    KeyCode::Esc => {
+                        app.view = View::Home;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                    KeyCode::Down | KeyCode::Char('j') => app.next(0),
+                    KeyCode::Enter => {
+                        // Placeholder: enter group chat
+                    }
                     _ => {}
                 },
             }
@@ -366,6 +396,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         View::Contacts => render_contacts(f, body_chunks[1], app),
         View::Chat(idx) => render_chat(f, body_chunks[1], app, *idx),
         View::Timeline => render_timeline(f, body_chunks[1], app),
+        View::Groups => render_groups(f, body_chunks[1], app),
     }
 
     // ── Footer ──
@@ -374,6 +405,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
         View::Contacts => "j/k ↑↓ 选人  |  Enter 进入聊天  |  Esc 返回",
         View::Chat(_) => "输入消息  |  Enter 发送  |  Esc 返回",
         View::Timeline => "j/k ↑↓ 滚动  |  Esc 返回",
+        View::Groups => "j/k ↑↓ 选群  |  Enter 进入群聊  |  Esc 返回",
     };
     let footer_text = vec![Line::from(Span::styled(
         format!(
@@ -677,6 +709,80 @@ fn render_timeline(f: &mut Frame, area: Rect, app: &App) {
         .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: false });
     f.render_widget(timeline_widget, area);
+}
+
+fn render_groups(f: &mut Frame, area: Rect, app: &App) {
+    // Mock groups since group storage is GossipSub-based (ephemeral)
+    let mock_groups: &[(&str, &str, &str)] = &[
+        ("🎮 游戏频道", "7 人在线", "话题: StarCraft, Minecraft"),
+        ("🤖 AI 讨论组", "12 人在线", "话题: LLM, Agent, P2P"),
+        ("📚 技术分享", "5 人在线", "话题: Rust, Wasm, libp2p"),
+        ("☕ 摸鱼群", "3 人在线", "话题: 随便聊聊"),
+        ("🔧 开发者群", "9 人在线", "话题: 开源, CI/CD, DevOps"),
+    ];
+
+    let group_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+        .split(area);
+
+    let group_items: Vec<ListItem> = mock_groups
+        .iter()
+        .enumerate()
+        .map(|(i, &(name, count, _))| {
+            let style = if i == app.group_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            ListItem::new(Span::styled(format!("  {}  {}", name, count), style))
+        })
+        .collect();
+
+    let group_list = List::new(group_items)
+        .block(Block::default().borders(Borders::ALL).title(" 群聊列表 "))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    f.render_stateful_widget(
+        group_list,
+        group_chunks[0],
+        &mut ListState::default().with_selected(Some(app.group_index)),
+    );
+
+    // Group detail
+    if let Some(&(name, count, topic)) = mock_groups.get(app.group_index) {
+        let detail_text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("  {}", name),
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("  在线: {}", count),
+                Style::default().fg(Color::Green),
+            )),
+            Line::from(Span::styled(
+                format!("  {}", topic),
+                Style::default().fg(Color::Cyan),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  GossipSub 协议 — 去中心化群聊",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  按 Enter 加入群聊",
+                Style::default().fg(Color::Green),
+            )),
+        ];
+        let detail = Paragraph::new(Text::from(detail_text))
+            .block(Block::default().borders(Borders::ALL).title(" 群详情 "))
+            .wrap(Wrap { trim: false });
+        f.render_widget(detail, group_chunks[1]);
+    }
 }
 
 #[cfg(test)]
