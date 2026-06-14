@@ -29,6 +29,8 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+# Allow path dependencies (workspace members) to use wildcard version
+allow-wildcard-paths = true
 # yamux: libp2p-yamux pulls both 0.12.1 and 0.13.10 — harmless duplicate
 skip = [
     { name = "yamux", version = "0.12.1" },
