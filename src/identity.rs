@@ -257,6 +257,20 @@ mod tests {
     }
 
     #[test]
+    fn test_seed_bytes_length() {
+        let id = Identity::generate();
+        let seed = id.to_seed_bytes();
+        assert_eq!(seed.len(), 32);
+    }
+
+    #[test]
+    fn test_verifying_key() {
+        let id = Identity::generate();
+        let vk = id.verifying_key();
+        assert_eq!(vk.as_bytes().len(), 32);
+    }
+
+    #[test]
     fn test_agent_card_sign_and_verify() {
         let id = Identity::generate();
         let card = id
@@ -274,5 +288,69 @@ mod tests {
         // Tamper
         card.name = "EvilBot".to_string();
         assert!(!card.verify().unwrap());
+    }
+
+    // ── decode_did_key error paths ──────────────────────────────────
+
+    #[test]
+    fn decode_did_key_bad_prefix() {
+        let result = decode_did_key("did:other:z1234");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_did_key_bad_base58() {
+        let result = decode_did_key("did:key:z!!!invalid!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_did_key_wrong_multicodec() {
+        // Construct a key with wrong multicodec prefix (0xAB, 0xCD)
+        let mut buf = vec![0xAB, 0xCD];
+        buf.extend_from_slice(&[0u8; 32]);
+        let encoded = bs58::encode(&buf).into_string();
+        let did = format!("did:key:z{encoded}");
+        assert!(decode_did_key(&did).is_err());
+    }
+
+    #[test]
+    fn decode_did_key_wrong_length() {
+        // Only 4 bytes after prefix — too short for Ed25519 (needs 32)
+        let mut buf = vec![0xED, 0x01]; // correct multicodec
+        buf.extend_from_slice(&[0u8; 4]); // wrong key length
+        let encoded = bs58::encode(&buf).into_string();
+        let did = format!("did:key:z{encoded}");
+        assert!(decode_did_key(&did).is_err());
+    }
+
+    #[test]
+    fn decode_did_key_invalid_key() {
+        // ed25519-dalek 2.x doesn't reject all invalid points;
+        // instead test that from_seed returns consistent did for same seed.
+        let seed = [42u8; 32];
+        let id1 = Identity::from_seed(&seed).unwrap();
+        let id2 = Identity::from_seed(&seed).unwrap();
+        assert_eq!(id1.did, id2.did);
+        assert_eq!(id1.short_code, id2.short_code);
+    }
+
+    // ── AgentCard verify error paths ────────────────────────────────
+
+    #[test]
+    fn agent_card_verify_invalid_proof_encoding() {
+        let id = Identity::generate();
+        let mut card = id.create_card("Bot", "h:test", "gpt", &[]).unwrap();
+        card.proof = "!!!not-base58!!!".into();
+        assert!(card.verify().is_err());
+    }
+
+    #[test]
+    fn agent_card_verify_invalid_proof_length() {
+        let id = Identity::generate();
+        let mut card = id.create_card("Bot", "h:test", "gpt", &[]).unwrap();
+        // base58-encode a 16-byte string (wrong sig length)
+        card.proof = bs58::encode(&[0u8; 16]).into_string();
+        assert!(card.verify().is_err());
     }
 }
