@@ -228,6 +228,13 @@ enum ServiceCmd {
         #[arg(short, long)]
         online: bool,
     },
+    /// 查看文章详情 — 全文输出 + Markdown→ANSI 渲染 (S13R136)
+    View {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 文章版本号 (如 1, 2, 3...)
+        version: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -531,6 +538,10 @@ async fn run() -> errors::AcResult<()> {
             ServiceCmd::Discover { query, online } => {
                 cmd_service_discover(query.as_deref(), online)?
             }
+            ServiceCmd::View {
+                service_id,
+                version,
+            } => cmd_service_view(&service_id, version)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2523,6 +2534,192 @@ fn cmd_service_discover(query: Option<&str>, online_only: bool) -> errors::AcRes
         println!("💡 启动 daemon 以获取实时数据: agent-circle daemon start");
     }
 
+    Ok(())
+}
+
+// ── Service view (S13R136 Markdown rendering) ────────────────────
+
+/// Render basic markdown to ANSI terminal formatting.
+fn render_markdown(text: &str) -> String {
+    let bold = "\x1b[1m";
+    let italic = "\x1b[3m";
+    let code_fmt = "\x1b[7m"; // inverse
+    let header_fmt = "\x1b[1;4m";
+    let reset = "\x1b[0m";
+    let dim = "\x1b[2m";
+
+    let mut out = String::with_capacity(text.len());
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        // Headers: # at start of line
+        if c == '#' && (i == 0 || chars[i.saturating_sub(1)] == '\n') {
+            let end = chars[i..]
+                .iter()
+                .position(|&ch| ch == '\n')
+                .unwrap_or(chars.len() - i);
+            let header_text: String = chars[i..i + end].iter().collect();
+            out.push_str(header_fmt);
+            out.push_str(&header_text);
+            out.push_str(reset);
+            i += end;
+            continue;
+        }
+
+        // Bold: **text**
+        if c == '*' && i + 1 < chars.len() && chars[i + 1] == '*' {
+            let start = i + 2;
+            if let Some(end) = chars[start..]
+                .windows(2)
+                .position(|w| w[0] == '*' && w[1] == '*')
+            {
+                let bold_text: String = chars[start..start + end].iter().collect();
+                out.push_str(bold);
+                out.push_str(&bold_text);
+                out.push_str(reset);
+                i = start + end + 2;
+                continue;
+            } else {
+                out.push_str("**");
+                i += 2;
+                continue;
+            }
+        }
+
+        // Italic: *text* (but not **)
+        if c == '*'
+            && (i + 1 >= chars.len() || chars[i + 1] != '*')
+            && (i == 0 || chars[i - 1] != '*')
+        {
+            let start = i + 1;
+            if let Some(pos) = chars[start..].iter().position(|&ch| ch == '*') {
+                if pos > 0 && (start + pos + 1 >= chars.len() || chars[start + pos + 1] != '*') {
+                    let italic_text: String = chars[start..start + pos].iter().collect();
+                    out.push_str(italic);
+                    out.push_str(&italic_text);
+                    out.push_str(reset);
+                    i = start + pos + 1;
+                    continue;
+                }
+            }
+        }
+
+        // Inline code: `text`
+        if c == '`' {
+            let start = i + 1;
+            if let Some(end) = chars[start..].iter().position(|&ch| ch == '`') {
+                let code_text: String = chars[start..start + end].iter().collect();
+                out.push_str(code_fmt);
+                out.push_str(&code_text);
+                out.push_str(reset);
+                i = start + end + 1;
+                continue;
+            }
+        }
+
+        // Unordered list: - item →   • item
+        if c == '-'
+            && (i == 0 || chars[i.saturating_sub(1)] == '\n')
+            && i + 1 < chars.len()
+            && chars[i + 1] == ' '
+        {
+            out.push_str("  •");
+            i += 1;
+            continue;
+        }
+
+        // Horizontal rule: ---
+        if c == '-'
+            && i + 2 < chars.len()
+            && chars[i + 1] == '-'
+            && chars[i + 2] == '-'
+            && (i == 0 || chars[i.saturating_sub(1)] == '\n')
+        {
+            out.push_str(&format!("{dim}──────────────────────────────{reset}"));
+            i += 3;
+            while i < chars.len() && chars[i] == '-' {
+                i += 1;
+            }
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+
+    out
+}
+
+/// View a single publication with ANSI markdown rendering.
+fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
+    use agent_circle_core::publication::ContentType;
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let history = storage::load_publication_history(&data_dir, service_id)?;
+
+    let pub_msg = history
+        .publications
+        .iter()
+        .find(|p| p.version == version)
+        .ok_or_else(|| {
+            errors::AcError::Identity(format!(
+                "service '{}' has no publication version {}",
+                service_id, version
+            ))
+        })?;
+
+    println!("╔══════════════════════════════════════════════════════════╗");
+    println!("║  📰 {}", pub_msg.title);
+    println!("╠══════════════════════════════════════════════════════════╣");
+    println!("║  服务: {:<49}║", pub_msg.service_id);
+    println!("║  版本: v{:<47}║", pub_msg.version);
+    println!(
+        "║  时间: {:<49}║",
+        pub_msg.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    println!(
+        "║  格式: {:<49}║",
+        match pub_msg.content_type {
+            ContentType::Markdown => "Markdown",
+            ContentType::Text => "Plain Text",
+        }
+    );
+    println!(
+        "║  ID:   {:<49}║",
+        &pub_msg.id[..std::cmp::min(48, pub_msg.id.len())]
+    );
+    println!("╠══════════════════════════════════════════════════════════╣");
+
+    let rendered = match pub_msg.content_type {
+        ContentType::Markdown => render_markdown(&pub_msg.content),
+        ContentType::Text => pub_msg.content.clone(),
+    };
+
+    for line in rendered.lines() {
+        if line.len() > 56 {
+            // Wrap long lines
+            let mut remaining: &str = line;
+            while !remaining.is_empty() {
+                let take = std::cmp::min(56, remaining.len());
+                let (chunk, rest) = remaining.split_at(remaining.floor_char_boundary(take));
+                println!("║  {:<56}║", chunk);
+                remaining = rest;
+            }
+        } else {
+            println!("║  {:<56}║", line);
+        }
+    }
+
+    println!("╚══════════════════════════════════════════════════════════╝");
+    if !pub_msg.signature.is_empty() {
+        println!(
+            "🔏 Ed25519 签名: {}...",
+            &pub_msg.signature[..std::cmp::min(16, pub_msg.signature.len())]
+        );
+    }
     Ok(())
 }
 
