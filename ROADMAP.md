@@ -255,7 +255,7 @@
 | 117 | 健康检查端点（本地 HTTP） | ✅ `curl http://127.0.0.1:9099/health` + `/metrics` |
 | 118 | Crash dump（panic → 结构化 dump 文件） | ✅ `~/.agent-circle/crash/<iso8601>.dump` |
 | 119 | 远程诊断模式（`doctor --peer <ID>`） | ✅ `agent-circle doctor --peer <PEER>` 远程诊断 |
-| 120 | S11 回顾 | Sprint 回顾文档 |
+| 120 | S11 回顾 | ✅ Sprint 回顾文档 docs/S11-retrospective.md |
 
 ---
 
