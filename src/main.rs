@@ -4,6 +4,7 @@
 
 mod chat;
 mod control;
+mod crash;
 mod dedup;
 mod diag;
 mod errors;
@@ -379,6 +380,9 @@ async fn run() -> errors::AcResult<()> {
     // Init tracing: JSON for daemon, human-readable for CLI
     let is_daemon = matches!(cli.command, Commands::Daemon { .. });
     init_tracing(is_daemon);
+
+    // S11R118 — Register crash dump handler early (before any work)
+    let _ = crash::init(storage::resolve_data_dir(cli.data_dir.as_ref())?);
 
     // Store data dir globally so storage module can access it
     if let Some(ref dir) = cli.data_dir {

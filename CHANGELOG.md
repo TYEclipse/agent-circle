@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S11R118: Crash dump 系统** — panic 时自动写入结构化 dump 到 `~/.agent-circle/crash/<iso8601>.dump`（JSON 格式：时间戳/panic 消息/backtrace/系统信息/agent 状态快照）；同时维护 `latest.dump`；3 个单元测试
 - **S11R117: 健康检查 HTTP 端点** — daemon 启动时自动开启 `127.0.0.1:9099` 健康检查服务器（零新依赖，tokio TcpListener + 原生 HTTP）；`/health` 返回 JSON 状态（identity/storage/network + daemon 状态）；`/metrics` 返回 OpenMetrics 格式指标（复用 R116 collector）
 - **S11R116: `agent-circle metrics` OpenMetrics/Prometheus 指标暴露** — `agent-circle metrics` 命令输出 OpenMetrics 格式指标：daemon 状态、存储大小、联系人/时间线/服务计数、离线队列统计；15+ 指标，零依赖 Prometheus 可刮取
 - **S11R115: 统一错误码体系 `agent-circle doctor -c errors`** — 5 个错误码 (E0001–E0005)，`AcError::code()` / `code_description()`，Display 自动嵌入 code
