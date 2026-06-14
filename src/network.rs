@@ -8,6 +8,7 @@
 
 use crate::chat::{ChatRequest, ChatResponse};
 use crate::dedup::DedupFilter;
+use crate::diag::DiagCounters;
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use crate::message_queue;
@@ -217,9 +218,15 @@ pub async fn run_daemon(
     let mut relay_registered_or_discovered = false;
     let mut pending = PendingTracker::new();
     let mut dedup = DedupFilter::new();
+    let counters = DiagCounters::default();
+    let started = std::time::Instant::now();
+    let mut stats_timer = tokio::time::interval(std::time::Duration::from_secs(30));
+    stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
-        match swarm.select_next_some().await {
+        tokio::select! {
+            event = swarm.select_next_some() => {
+        match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!(addr = %address, "监听地址");
             }
@@ -254,6 +261,7 @@ pub async fn run_daemon(
                             chat_req.ts,
                             chat_req.msg_id,
                         );
+                        counters.inc_sent();
                         let _ = q.mark_delivered(entry.id);
                         info!(peer = %peer_str, "✅ 离线消息已发送 （等待ACK）");
                     }
@@ -298,6 +306,7 @@ pub async fn run_daemon(
             )) => {
                 if dedup.is_dup(request.msg_id) {
                     debug!(msg_id = request.msg_id, "🔄 重复消息，已跳过");
+                    counters.inc_duplicate();
                 } else {
                     info!(from = %request.from, msg_id = request.msg_id, content = %request.content, "收到私聊");
                 }
@@ -324,6 +333,7 @@ pub async fn run_daemon(
                         elapsed_ms = entry.created_at.elapsed().as_millis(),
                         "✅ ACK — 消息已送达"
                     );
+                    counters.inc_acked();
                 }
             }
 
@@ -353,6 +363,7 @@ pub async fn run_daemon(
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
                         pending.retrack(new_id, entry);
+                        counters.inc_retried();
                     }
                     Some(entry) => {
                         // Retries exhausted — hand off to offline queue
@@ -361,10 +372,13 @@ pub async fn run_daemon(
                             retries = entry.retries,
                             "📥 重试耗尽，存入离线队列"
                         );
+                        counters.inc_failed();
                         match message_queue::Queue::open(data_dir) {
                             Ok(q) => {
                                 if let Err(e) = q.push(&peer.to_string(), &entry.content) {
                                     warn!(error = %e, "离线队列入队失败");
+                                } else {
+                                    counters.inc_queued();
                                 }
                             }
                             Err(e) => warn!(error = %e, "无法打开离线队列"),
@@ -457,6 +471,16 @@ pub async fn run_daemon(
             }
             _ => {}
         }
+            } // end match → event arm
+            _ = stats_timer.tick() => {
+                let q_stats = message_queue::Queue::open(data_dir)
+                    .ok()
+                    .and_then(|q| q.stats().ok())
+                    .unwrap_or((0, 0, 0));
+                let snap = counters.snapshot(pending.len(), q_stats, started);
+                info!("{}", crate::diag::format_snapshot(&snap));
+            }
+        } // end tokio::select!
 
         if !bootstrapped && swarm.listeners().next().is_some() {
             if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
