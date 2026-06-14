@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod dedup;
+pub mod diag;
 pub mod errors;
 pub mod identity;
 pub mod message_queue;

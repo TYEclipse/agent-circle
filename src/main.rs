@@ -4,6 +4,7 @@
 
 mod chat;
 mod dedup;
+mod diag;
 mod errors;
 mod identity;
 mod message_queue;
@@ -71,6 +72,20 @@ enum Commands {
     /// 朋友圈 — 个人社交时间线
     #[command(subcommand)]
     Timeline(TimelineCmd),
+
+    /// 诊断 — 消息投递统计 & 离线队列
+    Diag {
+        #[command(subcommand)]
+        cmd: DiagCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum DiagCmd {
+    /// 离线消息队列统计 (pending / delivered / failed)
+    Queue,
+    /// 守护进程运行状态
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -245,6 +260,10 @@ async fn run() -> errors::AcResult<()> {
             TimelineCmd::Post { message } => cmd_timeline_post(&message.join(" "))?,
             TimelineCmd::Show => cmd_timeline_show()?,
             TimelineCmd::Verify => cmd_timeline_verify()?,
+        },
+        Commands::Diag { cmd } => match cmd {
+            DiagCmd::Queue => cmd_diag_queue()?,
+            DiagCmd::Status => cmd_daemon_status()?,
         },
     }
 
@@ -751,6 +770,30 @@ fn cmd_timeline_verify() -> errors::AcResult<()> {
         Err(e) => {
             eprintln!("❌ 时间线验证失败: {e}");
         }
+    }
+    Ok(())
+}
+
+// ── Diag command ────────────────────────────────────────────────────
+
+fn cmd_diag_queue() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    match message_queue::Queue::open(&data_dir) {
+        Ok(q) => match q.stats() {
+            Ok((pending, delivered, failed)) => {
+                println!(
+                    "📬 离线消息队列\n  待发送: {}  已送达: {}  失败(>3次重试): {}",
+                    pending, delivered, failed
+                );
+                let total = pending + delivered + failed;
+                if total > 0 {
+                    let rate = (delivered as f64 / total as f64) * 100.0;
+                    println!("  总计: {}  送达率: {:.1}%", total, rate);
+                }
+            }
+            Err(e) => eprintln!("❌ 读取队列统计失败: {e}"),
+        },
+        Err(e) => eprintln!("❌ 打开离线队列失败: {e}"),
     }
     Ok(())
 }
