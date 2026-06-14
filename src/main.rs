@@ -97,8 +97,12 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum ServiceCmd {
-    /// 列出所有已发现的网络服务
-    List,
+    /// 列出所有已发现的网络服务（彩色表格）
+    List {
+        /// 显示详细信息（描述 + 最后在线时间）
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// 按名称或标签搜索服务
     Search {
         /// 搜索关键词
@@ -378,7 +382,7 @@ async fn run() -> errors::AcResult<()> {
             TimelineCmd::Verify => cmd_timeline_verify()?,
         },
         Commands::Service(cmd) => match cmd {
-            ServiceCmd::List => cmd_service_list()?,
+            ServiceCmd::List { verbose } => cmd_service_list(verbose)?,
             ServiceCmd::Search { query } => cmd_service_search(&query)?,
             ServiceCmd::Call {
                 peer_id,
@@ -1532,30 +1536,164 @@ fn cmd_timeline_verify() -> errors::AcResult<()> {
 // ── Service discovery commands ────────────────────────────────────────
 // S10R103
 
-fn cmd_service_list() -> errors::AcResult<()> {
+// S10R105 — 彩色表格展示层
+fn cmd_service_list(verbose: bool) -> errors::AcResult<()> {
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
     let registry = service_discovery::load_registry(&data_dir)?;
-    let services = registry.all_services();
+    let services = registry.all_services_with_meta();
+
     if services.is_empty() {
         println!("🔍 暂无已发现的服务 (等待 daemon 发现或手动公告)");
-    } else {
-        println!(
-            "🔍 已发现 {} 个服务 (来自 {} 个节点):",
-            services.len(),
-            registry.peer_count()
-        );
-        for (peer, svc) in &services {
-            let short_peer = &peer[..std::cmp::min(12, peer.len())];
-            print!("  {:<12}  {:20}  {:<25}", short_peer, svc.id, svc.name);
-            if let Some(ref desc) = svc.description {
-                print!("  {}", desc);
-            }
-            if !svc.tags.is_empty() {
-                print!("  [{}]", svc.tags.join(", "));
-            }
-            println!();
-        }
+        return Ok(());
     }
+
+    // ── ANSI color constants ──────────────────────────────────────
+    let (bold, reset) = ("\x1b[1m", "\x1b[0m");
+    let (cyan, green, yellow, dim, magenta) =
+        ("\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[2m", "\x1b[35m");
+
+    // Column widths (dynamic, using char count for multibyte safety)
+    let max_svc_id = services
+        .iter()
+        .map(|(_, s, _)| s.id.chars().count())
+        .max()
+        .unwrap_or(10)
+        .max(10);
+    let max_name = services
+        .iter()
+        .map(|(_, s, _)| s.name.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let max_ep = services
+        .iter()
+        .map(|(_, s, _)| s.endpoint.chars().count())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+
+    let w_peer = 14; // 12D3KooW… + 2 pad
+    let w_svc = max_svc_id + 4; // generous padding for truncation margin
+    let w_name = max_name + 4;
+    let w_ep = max_ep + 4;
+    let tag_w = 24;
+    let desc_w = if verbose { 36 } else { 0 };
+    let seen_w = if verbose { 18 } else { 0 };
+
+    // Total table width
+    let total_w = 1
+        + w_peer
+        + 1
+        + w_svc
+        + 1
+        + w_name
+        + 1
+        + w_ep
+        + 1
+        + tag_w
+        + 1
+        + if verbose { desc_w + 1 + seen_w + 1 } else { 0 };
+
+    // ── Top border + header ──────────────────────────────────────
+    let bar = "━".repeat(total_w);
+
+    println!("{}╔{}╗{}", dim, bar, reset);
+    let header_line = format!(
+        "{bold}🔍  Service Discovery — {} 服务 / {} 节点{reset}",
+        services.len(),
+        registry.peer_count()
+    );
+    let header_pad = total_w.saturating_sub(header_line.chars().count() + 2);
+    println!(
+        "{}║{} {}{}{} ║{}",
+        dim,
+        reset,
+        header_line,
+        " ".repeat(header_pad),
+        dim,
+        reset
+    );
+
+    // Column headers
+    println!("{}╟{}╢{}", dim, "─".repeat(total_w - 2), reset);
+    let col_hdr = format!(
+        "{bold}{:w_peer$}{reset}│{bold}{:w_svc$}{reset}│{bold}{:w_name$}{reset}│{bold}{:w_ep$}{reset}│{bold}{:tag_w$}{reset}",
+        "Peer", "Service", "Name", "Endpoint", "Tags"
+    );
+    let col_hdr = if verbose {
+        format!(
+            "{}│{bold}{:desc_w$}{reset}│{bold}{:seen_w$}{reset}",
+            col_hdr, "Description", "Last Seen"
+        )
+    } else {
+        col_hdr
+    };
+    println!("{}║{} {}║{}", dim, reset, col_hdr, reset);
+    println!("{}╟{}╢{}", dim, "─".repeat(total_w - 2), reset);
+
+    // ── Data rows ────────────────────────────────────────────────
+    let now = chrono::Utc::now().timestamp();
+    // small utility: truncate &str to max chars (char boundary safe)
+    fn trunc_str(s: &str, max_chars: usize) -> &str {
+        let mut char_count = 0;
+        for (i, _c) in s.char_indices() {
+            char_count += 1;
+            if char_count > max_chars {
+                return &s[..i];
+            }
+        }
+        s
+    }
+    for (peer, svc, last_seen) in &services {
+        let short_peer = trunc_str(peer, 12);
+        let tags_str = if svc.tags.is_empty() {
+            format!("{:tag_w$}", "—")
+        } else {
+            let joined = svc
+                .tags
+                .iter()
+                .map(|t| format!("{dim}[{reset}{magenta}{t}{reset}{dim}]{reset}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(
+                "{joined}{:w$}",
+                "",
+                w = tag_w.saturating_sub(svc.tags.join(" ").len() + svc.tags.len() * 3)
+            )
+        };
+        let name_trunc = trunc_str(&svc.name, w_name - 3);
+        let svc_id_trunc = trunc_str(&svc.id, w_svc - 3);
+
+        let row_base = format!(
+            "{cyan}{short_peer:w_peer$}{reset}│{green}{svc_id_trunc:w_svc$}{reset}│{yellow}{name_trunc:w_name$}{reset}│{dim}{:w_ep$}{reset}│{tags_str}",
+            svc.endpoint
+        );
+
+        let row = if verbose {
+            let desc = svc.description.as_deref().unwrap_or("—");
+            let desc_trunc = trunc_str(desc, desc_w - 3);
+            let age = now - *last_seen;
+            let seen = if *last_seen == 0 {
+                "从未".to_string()
+            } else if age < 60 {
+                format!("{}s 前", age)
+            } else if age < 3600 {
+                format!("{}m 前", age / 60)
+            } else if age < 86400 {
+                format!("{}h 前", age / 3600)
+            } else {
+                format!("{}d 前", age / 86400)
+            };
+            format!("{row_base}│{dim}{desc_trunc:desc_w$}{reset}│{dim}⏱ {seen:seen_w$}{reset}")
+        } else {
+            row_base
+        };
+
+        println!("{}║{} {}║{}", dim, reset, row, reset);
+    }
+
+    // ── Bottom border ────────────────────────────────────────────
+    println!("{}╚{}╝{}", dim, bar, reset);
     Ok(())
 }
 
@@ -1585,7 +1723,7 @@ fn cmd_service_call(
     params_json: &str,
 ) -> errors::AcResult<()> {
     let params: serde_json::Value =
-        serde_json::from_str(params_json).map_err(|e| errors::AcError::Serialization(e))?;
+        serde_json::from_str(params_json).map_err(errors::AcError::Serialization)?;
     // Format as a "service call" message via the chat protocol
     let msg = serde_json::json!({
         "type": "service-call",

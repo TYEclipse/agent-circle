@@ -91,6 +91,24 @@ impl ServiceRegistry {
         self.peers.values().map(|v| v.len()).sum()
     }
 
+    /// Get last-seen timestamp for a peer.
+    #[allow(dead_code)] // public API, used by future CLI display
+    pub fn last_seen_for(&self, peer_id: &str) -> Option<i64> {
+        self.last_seen.get(peer_id).copied()
+    }
+
+    /// Return all known services across all peers, with their last-seen timestamp.
+    /// Returns Vec of (peer_id, ServiceInfo, last_seen).
+    pub fn all_services_with_meta(&self) -> Vec<(String, ServiceInfo, i64)> {
+        self.peers
+            .iter()
+            .flat_map(|(peer, svcs)| {
+                let ts = self.last_seen.get(peer).copied().unwrap_or(0);
+                svcs.iter().map(move |s| (peer.clone(), s.clone(), ts))
+            })
+            .collect()
+    }
+
     /// Remove expired entries (peers not seen for `max_age_secs`).
     pub fn prune(&mut self, max_age_secs: i64) {
         let now = chrono::Utc::now().timestamp();
