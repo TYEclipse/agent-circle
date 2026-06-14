@@ -50,6 +50,12 @@ pub fn group_topic_prefix() -> String {
     "agent-circle/group".to_string()
 }
 
+/// GossipSub topic for service discovery announcements.
+/// Agents publish their services here; peers subscribe to discover them.
+pub fn services_topic() -> String {
+    format!("agent-circle/services/{VERSION}")
+}
+
 // ── Future multi-version support ──────────────────────────────────
 
 /// When we bump to 0.2.0, list ALL supported versions for backward

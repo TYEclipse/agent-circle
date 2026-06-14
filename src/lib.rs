@@ -15,5 +15,6 @@ pub mod plugin;
 pub mod protocol;
 pub mod reliability;
 pub mod sequence;
+pub mod service_discovery;
 pub mod storage;
 pub mod timeline;

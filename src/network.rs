@@ -11,9 +11,11 @@ use crate::dedup::DedupFilter;
 use crate::diag::DiagCounters;
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
+use crate::identity::ServiceInfo;
 use crate::message_queue::Queue;
 use crate::reliability::{PendingTracker, MAX_RETRIES};
 use crate::sequence::SequenceTracker;
+use crate::service_discovery::{self, ServiceRegistry};
 use futures::StreamExt;
 use libp2p::{
     connection_limits, dcutr, gossipsub, identify, kad,
@@ -228,6 +230,9 @@ pub async fn run_daemon(
         info!(name = %name, topic = %topic, "已加入群组");
     }
 
+    // S10R102 — Subscribe to service discovery channel
+    service_discovery::subscribe_services(&mut swarm)?;
+
     info!("Agent Circle 守护进程已启动");
     info!(peer_id = %local_peer_id, relay_mode = relay_mode, "PeerId");
 
@@ -247,6 +252,19 @@ pub async fn run_daemon(
     let mut stats_timer = tokio::time::interval(std::time::Duration::from_secs(30));
     stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut tick_count: u64 = 0;
+
+    // S10R102 — Service discovery registry + periodic publication
+    let mut service_registry = ServiceRegistry::default();
+    let mut service_pub_timer = tokio::time::interval(std::time::Duration::from_secs(60));
+    service_pub_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut service_prune_timer = tokio::time::interval(std::time::Duration::from_secs(300)); // 5 min
+    service_prune_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    // Publish own services immediately on startup (empty for now; R101 empty vec)
+    let own_services: Vec<ServiceInfo> = vec![];
+    if !own_services.is_empty() {
+        let _ = service_discovery::publish_services(&mut swarm, local_peer_id, &own_services);
+    }
 
     // ── Crash recovery: reload any persisted pending entries ──────
     // These are messages that were in-flight (sent but not yet ACK'd)
@@ -527,18 +545,28 @@ pub async fn run_daemon(
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
 
-            // ── GossipSub: incoming group message ───────────────────
+            // ── GossipSub: incoming group message or service announcement ──
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Gossip(
                 gossipsub::Event::Message { message, .. },
-            )) => match serde_json::from_slice::<serde_json::Value>(&message.data) {
-                Ok(msg) => {
-                    let from = msg["from"].as_str().unwrap_or("unknown");
-                    let content = msg["content"].as_str().unwrap_or("");
-                    let topic_name = message.topic.to_string();
-                    info!(topic = %topic_name, from = %from, content = %content, "群聊消息");
-                }
-                Err(_) => {
-                    warn!(topic = %message.topic, "无法解析群聊消息");
+            )) => {
+                let topic_str = message.topic.to_string();
+                // S10R102 — Route service announcements to the registry
+                if topic_str == crate::protocol::services_topic() {
+                    service_discovery::handle_service_message(
+                        &message.data,
+                        &mut service_registry,
+                    );
+                } else {
+                    match serde_json::from_slice::<serde_json::Value>(&message.data) {
+                        Ok(msg) => {
+                            let from = msg["from"].as_str().unwrap_or("unknown");
+                            let content = msg["content"].as_str().unwrap_or("");
+                            info!(topic = %topic_str, from = %from, content = %content, "群聊消息");
+                        }
+                        Err(_) => {
+                            warn!(topic = %topic_str, "无法解析群聊消息");
+                        }
+                    }
                 }
             },
 
@@ -632,6 +660,23 @@ pub async fn run_daemon(
                         Err(e) => warn!(error = %e, "pending过期清理失败"),
                     }
                 }
+            }
+            // S10R102 — Periodically publish own services
+            _ = service_pub_timer.tick() => {
+                // Re-publish even if empty — keeps the subscription alive
+                // TODO R103: Load services from AgentCard instead of empty vec
+                let _ = service_discovery::publish_services(
+                    &mut swarm, local_peer_id, &own_services,
+                );
+                debug!(
+                    peers = service_registry.peer_count(),
+                    services = service_registry.service_count(),
+                    "服务发布周期"
+                );
+            }
+            // S10R102 — Prune stale service entries
+            _ = service_prune_timer.tick() => {
+                service_registry.prune(600); // 10 min staleness
             }
         } // end tokio::select!
 
