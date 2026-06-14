@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S09R91–R99: Plugin 体系 ✅** — 插件接口 `trait AgentPlugin` (5 生命周期钩子 + 消息处理 + CLI)，`PluginRegistry` 动态加载 `.so`，`plugin list` CLI；**插件 SDK** `agent-circle-plugin` crate (`declare_plugin!` 宏 + re-export)；**内置 hello-world 插件** (cdylib + workspace 成员，匹配 hello/你好)；**Plugin 安全模型文档** (`docs/plugin-security.md`：威胁模型、能力声明、用户授权流程、WASM 沙箱方案)
 - **S08R81–R86: 协议版本化 + workspace 拆分** — `src/protocol.rs` 集中版本常量 (VERSION, chat/relay/group protocols)；`SUPPORTED_CHAT_PROTOCOLS` 多版本兼容规划；`docs/protocol-versioning.md` SemVer 策略文档；workspace Cargo.toml + `agent-circle-core` lib crate (shared types: chat, identity, errors, keys, protocol)；main crate re-exports from core via stub modules
 - **S07R71–R80: 跨平台构建 ✅** — CI 矩阵扩展到 Linux/macOS/Windows (`build-and-test` job)；跨平台路径 (`AGENT_CIRCLE_HOME` env var)；control socket 替代 SIGUSR1 (`daemon log-level <LEVEL>` 全平台通用)；`daemon install`/`uninstall` 一键生成 systemd/launchd/WinSW 服务配置（自动检测平台）；WinSW XML 模板 + 服务文档 (`services/README.md`)
 - **S06R61–R66: 供应链审计 + BIP-39 密钥** — `SUPPLY_CHAIN.md` 依赖审计（807 transitive，3 vuln豁免）；`src/keys.rs` BIP-39 助记词派生+验证（12词，PBKDF2→Ed25519），`identity mnemonic` / `identity restore` CLI；5个keys测试（含已知测试向量）
