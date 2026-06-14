@@ -22,6 +22,7 @@ pub struct PendingTracker {
 
 /// A single in-flight message.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // peer/ts used in log output; will be used for timeout eviction
 pub struct PendingEntry {
     pub peer: PeerId,
     pub from: String,
@@ -85,11 +86,13 @@ impl PendingTracker {
     }
 
     /// How many messages are currently awaiting ACK.
+    #[allow(dead_code)] // used in integration tests and monitoring
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
     /// True if no messages are in flight.
+    #[allow(dead_code)] // used in integration tests and monitoring
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
