@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S02R15: 消息可靠性 — ACK 追踪 + 指数退避重试** — `PendingTracker` 按 `OutboundRequestId` 追踪飞行中消息，ACK 到达确认送达，传输失败自动重试（最多 3 次），重试耗尽降级离线队列
 - **S01R13: Relay 发现协议** — relay 节点通过 DHT 广播地址（`/agent-circle/relays/0.1.0`），新节点启动后自动查询 DHT 发现并拨号 relay
 - **S01R12: Relay 中继节点实现** — `relay::Behaviour` 集成，节点可作为 Circuit Relay 为 NAT 后节点提供兜底连接
 - `daemon start --relay` CLI flag 启用以太坊中继模式

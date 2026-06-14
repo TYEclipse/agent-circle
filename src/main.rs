@@ -7,6 +7,7 @@ mod errors;
 mod identity;
 mod message_queue;
 mod network;
+mod reliability;
 mod storage;
 mod timeline;
 

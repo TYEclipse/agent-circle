@@ -10,6 +10,7 @@ use crate::chat::{ChatRequest, ChatResponse};
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use crate::message_queue;
+use crate::reliability::{PendingTracker, MAX_RETRIES};
 use futures::StreamExt;
 use libp2p::{
     dcutr, gossipsub, identify, kad,
@@ -19,7 +20,6 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
-use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
@@ -213,7 +213,7 @@ pub async fn run_daemon(
 
     let mut bootstrapped = false;
     let mut relay_registered_or_discovered = false;
-    let mut last_sent: HashMap<PeerId, String> = HashMap::new();
+    let mut pending = PendingTracker::new();
 
     loop {
         match swarm.select_next_some().await {
@@ -230,17 +230,27 @@ pub async fn run_daemon(
                 // Flush offline queue for this peer
                 if let Ok(q) = message_queue::Queue::open(data_dir) {
                     let peer_str = peer_id.to_string();
-                    let pending = q.pending_for(&peer_str).unwrap_or_default();
-                    for entry in pending {
+                    let pending_msgs = q.pending_for(&peer_str).unwrap_or_default();
+                    for entry in pending_msgs {
                         info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
                         let chat_req = ChatRequest {
                             from: id.short_code.clone(),
                             content: entry.content.clone(),
                             ts: chrono::Utc::now().timestamp(),
                         };
-                        let _req_id = swarm.behaviour_mut().chat.send_request(&peer_id, chat_req);
+                        let req_id = swarm
+                            .behaviour_mut()
+                            .chat
+                            .send_request(&peer_id, chat_req.clone());
+                        pending.track(
+                            req_id,
+                            peer_id,
+                            id.short_code.clone(),
+                            entry.content.clone(),
+                            chat_req.ts,
+                        );
                         let _ = q.mark_delivered(entry.id);
-                        info!(peer = %peer_str, "✅ 离线消息已发送");
+                        info!(peer = %peer_str, "✅ 离线消息已发送 （等待ACK）");
                     }
                 }
             }
@@ -291,26 +301,66 @@ pub async fn run_daemon(
             // ── Chat: ACK received ──────────────────────────
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
                 request_response::Event::Message {
-                    message: Message::Response { .. },
+                    peer,
+                    message: Message::Response { request_id, .. },
                     ..
                 },
-            )) => {}
+            )) => {
+                if let Some(entry) = pending.ack(&request_id) {
+                    info!(
+                        peer = %peer,
+                        content = %entry.content,
+                        retries = entry.retries,
+                        elapsed_ms = entry.created_at.elapsed().as_millis(),
+                        "✅ ACK — 消息已送达"
+                    );
+                }
+            }
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
-                request_response::Event::OutboundFailure { peer, error, .. },
+                request_response::Event::OutboundFailure {
+                    peer,
+                    request_id,
+                    error,
+                    ..
+                },
             )) => {
                 warn!(peer = %peer, error = ?error, "消息发送失败");
-                // Stash failed message for offline retry
-                if let Some(msg) = last_sent.remove(&peer) {
-                    match message_queue::Queue::open(data_dir) {
-                        Ok(q) => {
-                            if let Err(e) = q.push(&peer.to_string(), &msg) {
-                                warn!(error = %e, "离线队列入队失败");
-                            } else {
-                                info!(peer = %peer, msg = %msg, "📥 消息已存入离线队列");
+                match pending.fail(&request_id) {
+                    Some(entry) if entry.retries <= MAX_RETRIES => {
+                        // Within budget — retry immediately
+                        info!(
+                            peer = %peer,
+                            retry = entry.retries,
+                            max = MAX_RETRIES,
+                            "🔄 重试发送"
+                        );
+                        let chat_req = ChatRequest {
+                            from: entry.from.clone(),
+                            content: entry.content.clone(),
+                            ts: chrono::Utc::now().timestamp(),
+                        };
+                        let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
+                        pending.retrack(new_id, entry);
+                    }
+                    Some(entry) => {
+                        // Retries exhausted — hand off to offline queue
+                        info!(
+                            peer = %peer,
+                            retries = entry.retries,
+                            "📥 重试耗尽，存入离线队列"
+                        );
+                        match message_queue::Queue::open(data_dir) {
+                            Ok(q) => {
+                                if let Err(e) = q.push(&peer.to_string(), &entry.content) {
+                                    warn!(error = %e, "离线队列入队失败");
+                                }
                             }
+                            Err(e) => warn!(error = %e, "无法打开离线队列"),
                         }
-                        Err(e) => warn!(error = %e, "无法打开离线队列"),
+                    }
+                    None => {
+                        debug!(peer = %peer, "OutboundFailure 未跟踪消息");
                     }
                 }
             }
