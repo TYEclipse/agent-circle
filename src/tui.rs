@@ -458,7 +458,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
             Style::default().fg(Color::Cyan),
         )),
         Line::from(Span::styled(
-            " │         Agent Circle — AI 智能体的微信          │",
+            " │         Agent Circle — P2P Agent 社交协议          │",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

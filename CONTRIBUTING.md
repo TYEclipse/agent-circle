@@ -63,12 +63,10 @@ agent-circle/
 │   ├── api/                # API 参考
 │   ├── user-guide.md
 │   ├── protocol-spec.md
-│   └── S*-retrospective.md
 ├── justfile                # 任务编排
 ├── Cargo.toml              # Workspace 清单
 ├── CHANGELOG.md
-├── ROADMAP.md              # 200 轮迭代路线图
-└── CONTRIBUTING.md         # 你正在看的
+├── README.md
 ```
 
 ## 构建与测试
@@ -118,23 +116,21 @@ just test         # cargo test --all-targets 全部通过
 
 ### 提交信息规范
 
-格式：`SXXRYYY: 简短英文标题 — 中文详情`
+格式：`feat: 简短英文标题 — 中文详情` 或 `fix: 简短描述`
 
 | 示例 | 说明 |
 |------|------|
-| `S12R124: CONTRIBUTING.md — 完整的贡献指南` | 标准轮次提交 |
-| `S11R119: remote diagnosis — doctor --peer <PEER_ID>` | 带命令行参数 |
+| `feat: CONTRIBUTING.md — 完整的贡献指南` | 功能提交 |
+| `feat: remote diagnosis — doctor --peer <PEER_ID>` | 带命令行参数 |
 
-- `SXX` = Sprint 编号 (S00–S19)
-- `RYYY` = 轮次编号 (1–200)
+- 使用 Conventional Commits 前缀：`feat:` / `fix:` / `docs:` / `refactor:` / `test:`
 - 英文标题简短概括改动（首字母大写，不加句号）
 - `—` 后中文详情说明做了什么
-- 修复、重构等非轮次提交使用 `fix:` / `refactor:` 前缀
 
 ### 分支策略
 
 ```
-master  ←──  功能分支 (feature/s12-r124-xxx)
+master  ←──  功能分支 (feature/xxx)
   ↑
   所有开发在 master 上直接提交或从 master 分支
 ```
@@ -149,14 +145,14 @@ master  ←──  功能分支 (feature/s12-r124-xxx)
 
 ## PR 流程
 
-### 1. 开 Issue 或认领 Roadmap 轮次
+### 1. 开 Issue
 
-每个开发工作对应 ROADMAP.md 中的一个轮次或一个 GitHub Issue。如果做的是路线图外的改动，先开 Issue 讨论。
+每个开发工作对应一个功能规划条目或一个 GitHub Issue。如果做的是计划外的改动，先开 Issue 讨论。
 
 ### 2. 创建分支
 
 ```bash
-git checkout -b feature/s12-r124-contributing
+git checkout -b feature/xxx
 ```
 
 ### 3. 开发 + 本地自检
@@ -171,13 +167,13 @@ just ci                # 全量门禁
 
 ```bash
 git add -A
-git commit -m "S12R124: CONTRIBUTING.md — 完整的贡献指南"
+git commit -m "feat: CONTRIBUTING.md — 完整的贡献指南"
 ```
 
 ### 5. 推送 + 开 PR
 
 ```bash
-git push origin feature/s12-r124-contributing
+git push origin feature/xxx
 # 在 GitHub 上创建 PR
 ```
 
@@ -250,7 +246,6 @@ cargo fuzz run <target_name>
 
 ## 获取帮助
 
-- **路线图**：`ROADMAP.md` — 查看当前 Sprint 和待办轮次
 - **用户文档**：`docs/user-guide.md`
 - **协议规范**：`docs/protocol-spec.md`
 - **API 参考**：`docs/api/`
@@ -258,4 +253,4 @@ cargo fuzz run <target_name>
 
 ---
 
-> Agent Circle 遵循 **三化六性** 标准：通用化 · 系列化 · 组合化 | 可靠性 · 维修性 · 保障性 · 测试性 · 安全性 · 环境适应性。
+---

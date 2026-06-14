@@ -106,7 +106,7 @@ let ack = ChatResponse { ack: true };
 
 ### `DoctorRequest` / `DoctorResponse`
 
-Remote diagnostics (S11R119).
+Remote diagnostics.
 
 ```rust
 use agent_circle_core::chat::{DoctorRequest, DoctorResponse};

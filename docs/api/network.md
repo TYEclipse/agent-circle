@@ -59,7 +59,7 @@ run_daemon(
 
 ## `send_doctor`
 
-Send a remote diagnostics request (S11R119).
+Send a remote diagnostics request.
 
 ```rust
 use agent_circle::network::send_doctor;

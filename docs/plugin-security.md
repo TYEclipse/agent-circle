@@ -1,7 +1,5 @@
 # Agent Circle · Plugin 安全模型
 
-S09R99 — 插件系统的安全威胁分析、权限模型、用户授权流程与沙箱方案。
-
 ---
 
 ## 1. 威胁模型 (Threat Model)
