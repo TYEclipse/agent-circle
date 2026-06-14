@@ -182,6 +182,59 @@ pub struct ServiceInfo {
     /// Searchable tags for discovery (e.g. ["weather", "forecast"]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// S10R106 — Supported protocol versions (e.g. ["1.0.0", "2.0.0-beta"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_versions: Vec<String>,
+    /// S10R106 — JSON Schema describing accepted input parameters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<String>,
+}
+
+// ── Capability Negotiation (S10R106) ────────────────────────────────
+
+/// Sent by a caller to probe a service's capabilities before invoking.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityProbe {
+    /// Which service are we asking about (e.g. "weather-v1").
+    pub service_id: String,
+    /// Protocol versions the caller supports (ordered by preference).
+    pub accepted_versions: Vec<String>,
+    /// Requested parameter format (e.g. "json", "cbor").
+    #[serde(default = "default_format")]
+    pub param_format: String,
+}
+
+fn default_format() -> String {
+    "json".into()
+}
+
+/// A single capability entry returned by the service.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProtocolVersion {
+    /// Semantic version string (e.g. "1.0.0").
+    pub version: String,
+    /// Endpoint path for this version (e.g. "/ac/weather/1.0.0").
+    pub endpoint: String,
+    /// Input parameter JSON schema (optional — "{}" = no schema).
+    #[serde(default = "empty_string")]
+    pub input_schema: String,
+}
+
+fn empty_string() -> String {
+    String::new()
+}
+
+/// Response to a CapabilityProbe — the service lists what it supports.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityStatement {
+    /// Which service this statement describes.
+    pub service_id: String,
+    /// Protocols / versions the service supports.
+    pub versions: Vec<ProtocolVersion>,
+    /// Accepted parameter formats (e.g. ["json", "cbor"]).
+    pub accepted_formats: Vec<String>,
+    /// If the service_id is unknown, this is set to false.
+    pub service_found: bool,
 }
 
 // ── Agent Card ─────────────────────────────────────────────────────
