@@ -2230,18 +2230,44 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
     // ── Network check ───────────────────────────────────────────
     if should_run("network") {
         let sock = data_dir.join("control.sock");
-        if sock.exists() {
-            checks.push((
-                "network",
-                "✅",
-                "control socket 存在 — daemon 可能运行中".into(),
-            ));
+        let sock_exists = sock.exists();
+        let registry = service_discovery::load_registry(&data_dir).unwrap_or_default();
+        let peer_count = registry.peer_count();
+        let svc_count = registry.service_count();
+
+        if sock_exists {
+            let detail = if peer_count > 0 {
+                let peers = registry.all_services_with_meta();
+                let mut peer_set: Vec<String> = Vec::new();
+                for (p, _, ts) in &peers {
+                    let age = chrono::Utc::now().timestamp() - ts;
+                    let freshness = if age < 120 {
+                        "🟢"
+                    } else if age < 600 {
+                        "🟡"
+                    } else {
+                        "🔴"
+                    };
+                    let short = &p[..std::cmp::min(12, p.len())];
+                    peer_set.push(format!("{}{}", freshness, short));
+                }
+                peer_set.sort();
+                peer_set.dedup();
+                format!(
+                    "daemon 在线 · {} peers: {}",
+                    peer_count,
+                    peer_set.join(", ")
+                )
+            } else {
+                "daemon 在线 · 无已发现 peers".into()
+            };
+            checks.push(("network", "✅", detail));
         } else {
-            checks.push((
-                "network",
-                "⚠️",
-                "control socket 未找到 — daemon 未运行".into(),
-            ));
+            let detail = format!(
+                "daemon 离线 · 缓存 {} peers / {} services",
+                peer_count, svc_count
+            );
+            checks.push(("network", "⚠️", detail));
         }
     }
 
