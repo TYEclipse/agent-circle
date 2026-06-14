@@ -175,7 +175,7 @@ fn bench_ed25519_verify() {
     let start = Instant::now();
     for _ in 0..BENCH_ROUNDS {
         for sig in &signatures {
-            let _ = verifying_key.verify(payload, sig).unwrap();
+            verifying_key.verify(payload, sig).unwrap();
         }
     }
     let elapsed = start.elapsed();
@@ -235,7 +235,7 @@ fn bench_full_pipeline() {
 
             let sig2 = Signature::from_bytes(&sig_bytes);
             let _msg2: ChatRequest = serde_json::from_str(&payload).unwrap();
-            let _ = verifying_key.verify(payload.as_bytes(), &sig2).unwrap();
+            verifying_key.verify(payload.as_bytes(), &sig2).unwrap();
         }
     }
     let elapsed = start.elapsed();

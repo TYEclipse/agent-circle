@@ -131,8 +131,10 @@ mod tests {
         use libp2p::{kad::RecordKey, PeerId};
 
         let bootstrap_id = PeerId::random();
-        let mut config = libp2p::kad::store::MemoryStoreConfig::default();
-        config.max_records = 10000;
+        let config = libp2p::kad::store::MemoryStoreConfig {
+            max_records: 10000,
+            ..Default::default()
+        };
         let mut store = libp2p::kad::store::MemoryStore::with_config(bootstrap_id, config);
 
         // Write 5000 records
@@ -231,9 +233,7 @@ mod tests {
 
         // Queue 10 messages while "offline" (partition)
         for i in 1..=10 {
-            queue
-                .push(&format!("peer-1"), &format!("offline-{i}"))
-                .expect("push");
+            queue.push("peer-1", &format!("offline-{i}")).expect("push");
         }
 
         // Verify pending messages
