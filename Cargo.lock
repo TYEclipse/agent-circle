@@ -52,6 +52,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "libc",
  "libloading",
  "libp2p",
  "libp2p-request-response",

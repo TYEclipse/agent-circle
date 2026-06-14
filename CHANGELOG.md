@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### S17 · 边界条件 + 长稳 ✅
+
+- **S17R180: S17 回顾** — `docs/S17-retrospective.md` 闭合文档：10/10 完成，总进度 90%
+- **S17R175-179: 长稳 + 分区 + IPv6 + 低速网络** — `tests/s17_boundary.rs` 19 个测试（100K 序列模拟、250KB 分片长跑、5000 DHT 写入、IPv6 Multiaddr、离线队列恢复）
+- **S17R174: 超大消息分片** — `src/fragment.rs`：64KB 自动分片/重组，ServiceCall.fragment_info 编码
+- **S17R173: 磁盘满处理** — `src/disk.rs`：libc statvfs 磁盘监测，10MB critical/100MB warning，E0006 DiskFull
+- **S17R172: 时钟偏移** — `tests/clock_skew.rs` 7 个测试：seq-based 排序免疫 ts 偏移，±5min±1h 无影响
+- **S17R171: DHT 搅动** — `tests/dht_churn.rs` 5 个测试：50 节点 10 轮 add/remove，500 轮 toggle，key 隔离
+
 ### S16 · 压力测试 + 性能 ✅
 
 - **S16R170: S16 回顾** — `docs/S16-retrospective.md` 闭合文档：10/10 完成，总进度 85%
