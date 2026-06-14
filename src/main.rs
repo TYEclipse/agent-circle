@@ -220,6 +220,14 @@ enum ServiceCmd {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
     },
+    /// 主动发现网络服务 — 搜索本地注册 + daemon 状态感知 (S13R134)
+    Discover {
+        /// 搜索关键词 (省略则显示全部)
+        query: Option<String>,
+        /// 仅显示在线服务 (最后心跳 < 600s)
+        #[arg(short, long)]
+        online: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -520,6 +528,9 @@ async fn run() -> errors::AcResult<()> {
             ServiceCmd::History { service_id, limit } => cmd_service_history(&service_id, limit)?,
             ServiceCmd::Notifications => cmd_service_notifications()?,
             ServiceCmd::Read { service_id } => cmd_service_read(&service_id)?,
+            ServiceCmd::Discover { query, online } => {
+                cmd_service_discover(query.as_deref(), online)?
+            }
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2389,6 +2400,129 @@ fn cmd_service_read(service_id: &str) -> errors::AcResult<()> {
         "✅ 已读 — {} 条来自 '{}' 的推送通知已清除。",
         count, service_id
     );
+    Ok(())
+}
+
+// ── Service discover via DHT+local registry (S13R134) ─────────────
+
+/// Actively discover services from the network (daemon-aware).
+fn cmd_service_discover(query: Option<&str>, online_only: bool) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+
+    // Check daemon status
+    let port_path = data_dir.join("control.port");
+    let daemon_up = port_path.exists();
+    let freshness_threshold: i64 = 600; // 10 minutes
+
+    let results = match query {
+        Some(q) => registry.search(q),
+        None => registry.all_services(),
+    };
+
+    // Apply online filter
+    let now = chrono::Utc::now().timestamp();
+    let mut filtered: Vec<_> = results
+        .into_iter()
+        .filter(|(peer, _svc)| {
+            if !online_only {
+                return true;
+            }
+            registry
+                .last_seen_for(peer)
+                .map(|ts| now - ts < freshness_threshold)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    let label = query.unwrap_or("all");
+    let filter_label = if online_only { " (仅在线)" } else { "" };
+
+    if filtered.is_empty() {
+        println!("🔍 未找到匹配 \"{}\" 的服务{}", label, filter_label);
+        if daemon_up {
+            println!("   💡 daemon 运行中，请等待 GossipSub 同步更多服务。");
+        } else {
+            println!("   💡 启动 daemon 开启实时服务发现: agent-circle daemon start");
+        }
+        return Ok(());
+    }
+
+    // Sort by freshness (most recent first)
+    filtered.sort_by(|(a, _), (b, _)| {
+        let ta = registry.last_seen_for(a).unwrap_or(0);
+        let tb = registry.last_seen_for(b).unwrap_or(0);
+        tb.cmp(&ta)
+    });
+
+    println!(
+        "🌐 服务发现 · \"{}\"{} · {} 项结果",
+        label,
+        filter_label,
+        filtered.len()
+    );
+    if daemon_up {
+        println!("   🟢 daemon 在线 — 数据实时同步中");
+    } else {
+        println!("   ⚪ daemon 离线 — 显示缓存数据");
+    }
+    println!();
+
+    // Table header
+    let bar = "═".repeat(78);
+    let dim = "\x1b[2m";
+    let reset = "\x1b[0m";
+    println!("{dim}╔{bar}╗{reset}", dim = dim, bar = bar, reset = reset);
+    println!(
+        "{dim}║ {reset}{:<12}  {:<22}  {:<20}  {:<14}{dim} ║{reset}",
+        "Peer", "Service ID", "Name", "Freshness"
+    );
+    println!("{dim}╠{bar}╣{reset}", dim = dim, bar = bar, reset = reset);
+
+    for (peer, svc) in &filtered {
+        let short_peer: String = peer.chars().take(12).collect();
+        let svc_id: String = svc.id.chars().take(22).collect();
+        let svc_name: String = svc.name.chars().take(20).collect();
+
+        let fresh = registry
+            .last_seen_for(peer)
+            .map(|ts| {
+                let age = now - ts;
+                if age < 60 {
+                    format!("🟢 {}s 前", age)
+                } else if age < 3600 {
+                    format!("🟡 {}m 前", age / 60)
+                } else if age < 86400 {
+                    format!("🟠 {}h 前", age / 3600)
+                } else {
+                    format!("🔴 {}d 前", age / 86400)
+                }
+            })
+            .unwrap_or_else(|| "⚫ 未知".to_string());
+
+        println!(
+            "{dim}║ {reset}{:<12}  {:<22}  {:<20}  {:<14}{dim} ║{reset}",
+            short_peer, svc_id, svc_name, fresh
+        );
+    }
+
+    println!("{dim}╚{bar}╝{reset}", dim = dim, bar = bar, reset = reset);
+
+    let stale_count = filtered
+        .iter()
+        .filter(|(peer, _)| {
+            registry
+                .last_seen_for(peer)
+                .map(|ts| now - ts >= freshness_threshold)
+                .unwrap_or(true)
+        })
+        .count();
+    let fresh_count = filtered.len() - stale_count;
+    println!("\n📊 在线: {} · 可能离线: {}", fresh_count, stale_count);
+    if !daemon_up {
+        println!("💡 启动 daemon 以获取实时数据: agent-circle daemon start");
+    }
+
     Ok(())
 }
 

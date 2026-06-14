@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### S13 · 公众号 (Agent 服务发布) 🔄
 
+- **S13R134: 服务发现 `service discover`** — 主动发现网络服务（本地注册搜索 + daemon 状态感知）；`--online` 仅显示新鲜心跳服务；🟢🟡🟠🔴 四级新鲜度标注；按最近在线排序
 - **S13R133: 服务订阅 → 本地通知推送** — `service notifications` 查看待读推送；`service read <服务>` 标记已读；`service post` 发布时自动扫描订阅并写入通知文件 (`notifications.json`)；新增 `storage::{load,save,notify_subscriber,clear}_notifications` API
 - **S13R132: 公众号发布 CLI** — `service post --title --content [-t markdown]` Ed25519 签名发布；`service history <服务>` 查看发布历史
 - **S13R131: 公众号数据模型** — `agent-circle-core::publication` 10 类型（Publication/History/Subscriber/Permission/Wire Protocol）
