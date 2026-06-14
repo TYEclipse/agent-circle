@@ -1,5 +1,6 @@
 [workspace]
 members = ["agent-circle-core", "agent-circle-plugin", "plugins/hello-world"]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
