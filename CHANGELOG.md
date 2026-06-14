@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S10R109: 服务市场 PoC — `agent-circle service publish`** — 本地发布服务到缓存（`service publish <ID> -n <NAME> -e <ENDPOINT> -d <DESC> -t <TAGS>`）；发布后在 `service list` 可见；daemon 模式下通过 GossipSub 自动广播
 - **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
 - **S10R107: 公众号模式-服务订阅** — `ServiceSubscriptions` 订阅跟踪（`agent-circle-core`）；`agent-circle service subscribe/unsubscribe/subscriptions` CLI（支持 `service@peer` 语法 + `--label`）；`subscriptions.json` 持久化；daemon 自动检测订阅服务更新并记录通知
 - **S10R106: 服务能力协商** — `CapabilityProbe`/`CapabilityStatement`/`ProtocolVersion` 类型（`agent-circle-core`）；`agent-circle service negotiate <peer> <service>` CLI 命令（查询协议版本 + 参数格式）；`ServiceInfo` 新增 `protocol_versions` + `input_schema` 可选字段；`service call` 新增 `--skip-negotiate` 标志
