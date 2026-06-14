@@ -1,7 +1,9 @@
 //! Offline message queue backed by SQLite.
 //!
 //! Messages that fail to deliver are stashed here, and retried
-//! when the recipient comes back online.
+//! when the recipient comes back online.  Expired messages
+//! (past their TTL) are silently dropped on flush or cleaned
+//! periodically.
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,8 @@ pub struct QueueEntry {
     pub created_at: String,
     pub retries: u32,
     pub last_error: Option<String>,
+    /// Unix timestamp (seconds) — null means no expiry.
+    pub expires_at: Option<i64>,
 }
 
 pub struct Queue {
@@ -38,32 +42,48 @@ impl Queue {
                 created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 retries     INTEGER NOT NULL DEFAULT 0,
                 last_error  TEXT,
-                delivered   INTEGER NOT NULL DEFAULT 0
+                delivered   INTEGER NOT NULL DEFAULT 0,
+                expires_at  INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_pending ON messages(peer, delivered);",
         )?;
 
+        // Schema migration: add expires_at column on existing databases
+        let _ = conn.execute_batch("ALTER TABLE messages ADD COLUMN expires_at INTEGER");
+
         Ok(Self { conn })
     }
 
-    /// Push a message into the queue.
+    /// Push a message into the queue with an optional expiry timestamp.
     pub fn push(&self, peer: &str, content: &str) -> Result<i64, rusqlite::Error> {
+        self.push_with_ttl(peer, content, None)
+    }
+
+    /// Push with a specific TTL (unix timestamp).
+    pub fn push_with_ttl(
+        &self,
+        peer: &str,
+        content: &str,
+        expires_at: Option<i64>,
+    ) -> Result<i64, rusqlite::Error> {
         self.conn.execute(
-            "INSERT INTO messages (peer, content) VALUES (?1, ?2)",
-            params![peer, content],
+            "INSERT INTO messages (peer, content, expires_at) VALUES (?1, ?2, ?3)",
+            params![peer, content, expires_at],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// Return all pending (undelivered) messages for a peer.
+    /// Return all pending (undelivered, NOT expired) messages for a peer.
     pub fn pending_for(&self, peer: &str) -> Result<Vec<QueueEntry>, rusqlite::Error> {
+        let now = chrono::Utc::now().timestamp();
         let mut stmt = self.conn.prepare(
-            "SELECT id, peer, content, created_at, retries, last_error
+            "SELECT id, peer, content, created_at, retries, last_error, expires_at
              FROM messages
              WHERE peer = ?1 AND delivered = 0
+               AND (expires_at IS NULL OR expires_at > ?2)
              ORDER BY id",
         )?;
-        let rows = stmt.query_map(params![peer], |row| {
+        let rows = stmt.query_map(params![peer, now], |row| {
             Ok(QueueEntry {
                 id: row.get(0)?,
                 peer: row.get(1)?,
@@ -71,6 +91,7 @@ impl Queue {
                 created_at: row.get(3)?,
                 retries: row.get(4)?,
                 last_error: row.get(5)?,
+                expires_at: row.get(6)?,
             })
         })?;
         rows.collect()
@@ -114,15 +135,17 @@ impl Queue {
         Ok((pending, delivered, failed))
     }
 
-    /// Flush ALL pending messages (try-send regardless of peer).
+    /// Flush ALL pending (non-expired) messages.
     pub fn all_pending(&self) -> Result<Vec<QueueEntry>, rusqlite::Error> {
+        let now = chrono::Utc::now().timestamp();
         let mut stmt = self.conn.prepare(
-            "SELECT id, peer, content, created_at, retries, last_error
+            "SELECT id, peer, content, created_at, retries, last_error, expires_at
              FROM messages
              WHERE delivered = 0
+               AND (expires_at IS NULL OR expires_at > ?1)
              ORDER BY peer, id",
         )?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![now], |row| {
             Ok(QueueEntry {
                 id: row.get(0)?,
                 peer: row.get(1)?,
@@ -130,8 +153,26 @@ impl Queue {
                 created_at: row.get(3)?,
                 retries: row.get(4)?,
                 last_error: row.get(5)?,
+                expires_at: row.get(6)?,
             })
         })?;
         rows.collect()
+    }
+
+    /// Delete expired messages. Returns number of rows removed.
+    pub fn expire_before(&self, cutoff_ts: i64) -> Result<usize, rusqlite::Error> {
+        let n = self.conn.execute(
+            "DELETE FROM messages WHERE expires_at IS NOT NULL AND expires_at <= ?1 AND delivered = 0",
+            params![cutoff_ts],
+        )?;
+        Ok(n)
+    }
+
+    /// Delete ALL delivered messages (vacuum helper).
+    pub fn prune_delivered(&self) -> Result<usize, rusqlite::Error> {
+        let n = self
+            .conn
+            .execute("DELETE FROM messages WHERE delivered = 1", [])?;
+        Ok(n)
     }
 }

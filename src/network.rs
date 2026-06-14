@@ -125,6 +125,7 @@ pub fn send_chat(
         content: content.to_string(),
         ts: chrono::Utc::now().timestamp(),
         msg_id: crate::chat::new_msg_id(),
+        ttl: crate::chat::default_ttl(),
     };
     swarm.behaviour_mut().chat.send_request(&peer_id, msg);
 }
@@ -222,6 +223,7 @@ pub async fn run_daemon(
     let started = std::time::Instant::now();
     let mut stats_timer = tokio::time::interval(std::time::Duration::from_secs(30));
     stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut tick_count: u64 = 0;
 
     loop {
         tokio::select! {
@@ -248,6 +250,7 @@ pub async fn run_daemon(
                             content: entry.content.clone(),
                             ts: chrono::Utc::now().timestamp(),
                             msg_id: crate::chat::new_msg_id(),
+                            ttl: entry.expires_at.unwrap_or(i64::MAX),
                         };
                         let req_id = swarm
                             .behaviour_mut()
@@ -260,6 +263,7 @@ pub async fn run_daemon(
                             entry.content.clone(),
                             chat_req.ts,
                             chat_req.msg_id,
+                            chat_req.ttl,
                         );
                         counters.inc_sent();
                         let _ = q.mark_delivered(entry.id);
@@ -360,6 +364,7 @@ pub async fn run_daemon(
                             content: entry.content.clone(),
                             ts: chrono::Utc::now().timestamp(),
                             msg_id: entry.msg_id,
+                            ttl: entry.ttl,
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
                         pending.retrack(new_id, entry);
@@ -375,7 +380,7 @@ pub async fn run_daemon(
                         counters.inc_failed();
                         match message_queue::Queue::open(data_dir) {
                             Ok(q) => {
-                                if let Err(e) = q.push(&peer.to_string(), &entry.content) {
+                                if let Err(e) = q.push_with_ttl(&peer.to_string(), &entry.content, Some(entry.ttl)) {
                                     warn!(error = %e, "离线队列入队失败");
                                 } else {
                                     counters.inc_queued();
@@ -473,12 +478,30 @@ pub async fn run_daemon(
         }
             } // end match → event arm
             _ = stats_timer.tick() => {
+                tick_count += 1;
                 let q_stats = message_queue::Queue::open(data_dir)
                     .ok()
                     .and_then(|q| q.stats().ok())
                     .unwrap_or((0, 0, 0));
                 let snap = counters.snapshot(pending.len(), q_stats, started);
                 info!("{}", crate::diag::format_snapshot(&snap));
+
+                // Every 5 minutes (10 ticks × 30s): purge expired + delivered messages
+                if tick_count.is_multiple_of(10) {
+                    if let Ok(q) = message_queue::Queue::open(data_dir) {
+                        let now = chrono::Utc::now().timestamp();
+                        match q.expire_before(now) {
+                            Ok(n) if n > 0 => info!(expired = n, "🧹 已清理过期离线消息"),
+                            Ok(_) => {}
+                            Err(e) => warn!(error = %e, "过期清理失败"),
+                        }
+                        match q.prune_delivered() {
+                            Ok(n) if n > 0 => info!(pruned = n, "🧹 已清理已送达记录"),
+                            Ok(_) => {}
+                            Err(e) => warn!(error = %e, "已送达清理失败"),
+                        }
+                    }
+                }
             }
         } // end tokio::select!
 

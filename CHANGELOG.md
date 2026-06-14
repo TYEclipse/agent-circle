@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S02R18: 消息 TTL 与过期清理** — `ChatRequest.ttl`（默认 7 天），离线队列 `expire_before()` 自动清理过期消息；daemon 每 5 分钟自动 `prune_delivered()` + `expire_before()`；`agent-circle diag clean` CLI 手动清理
 - **S02R17: 全链路诊断** — `DiagCounters` 原子计数器追踪每条消息生命周期（发送/ACK/重试/失败/入队/重复），daemon 每 30s 自动输出送达率统计；`agent-circle diag queue` CLI 查看离线队列
 - **S02R16: 消息去重** — `DedupFilter` 按 `msg_id` 追踪已收消息，重传自动去重只发 ACK 不重复处理，结合 ACK+重试实现 effectively-once 语义
 - **S02R15: 消息可靠性 — ACK 追踪 + 指数退避重试** — `PendingTracker` 按 `OutboundRequestId` 追踪飞行中消息，ACK 到达确认送达，传输失败自动重试（最多 3 次），重试耗尽降级离线队列
