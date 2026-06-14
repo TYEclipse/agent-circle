@@ -121,7 +121,7 @@ pub fn send_chat(
     peer_id: PeerId,
     from: &str,
     content: &str,
-) {
+) -> request_response::OutboundRequestId {
     let msg = ChatRequest {
         from: from.to_string(),
         content: content.to_string(),
@@ -130,7 +130,7 @@ pub fn send_chat(
         ttl: crate::chat::default_ttl(),
         seq: 0, // ad-hoc send, no sequence tracking
     };
-    swarm.behaviour_mut().chat.send_request(&peer_id, msg);
+    swarm.behaviour_mut().chat.send_request(&peer_id, msg)
 }
 
 // ── Group Chat (GossipSub) ─────────────────────────────────────────
