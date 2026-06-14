@@ -311,3 +311,83 @@ mod tests {
         assert!(tl.is_empty());
     }
 }
+
+// ── S13R131 Publication history (公众号) ─────────────────────────
+
+use agent_circle_core::publication::PublicationHistory;
+use std::path::Path;
+
+/// Path for a service's publication history file.
+fn publication_history_path(data_dir: &Path, service_id: &str) -> PathBuf {
+    let safe_id = str::replace(service_id, &['/', '\\'][..], "_");
+    data_dir.join(format!("publications-{}.json", safe_id))
+}
+
+/// Load publication history for a service. Returns empty if not found.
+pub fn load_publication_history(data_dir: &Path, service_id: &str) -> AcResult<PublicationHistory> {
+    let path = publication_history_path(data_dir, service_id);
+    if !path.exists() {
+        return Ok(PublicationHistory::new(service_id.to_string()));
+    }
+    let json = std::fs::read_to_string(&path)?;
+    let history: PublicationHistory = serde_json::from_str(&json)?;
+    Ok(history)
+}
+
+/// Save publication history for a service.
+pub fn save_publication_history(history: &PublicationHistory, data_dir: &Path) -> AcResult<()> {
+    let path = publication_history_path(data_dir, &history.service_id);
+    let json = serde_json::to_string_pretty(history)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod publication_storage_tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("ac-pub-test-{}", rand::random::<u16>()))
+    }
+
+    #[test]
+    fn publication_history_save_and_load() {
+        use agent_circle_core::publication::Publication;
+        use chrono::Utc;
+
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let svc = "test-svc-v1";
+        let mut history = PublicationHistory::new(svc.to_string());
+
+        let pub_msg = Publication {
+            id: "abc123".into(),
+            service_id: svc.to_string(),
+            title: "Hello".into(),
+            content: "World".into(),
+            content_type: agent_circle_core::publication::ContentType::Text,
+            timestamp: Utc::now(),
+            version: 1,
+            signature: String::new(),
+        };
+        history.push(pub_msg);
+
+        save_publication_history(&history, &tmp).unwrap();
+        let loaded = load_publication_history(&tmp, svc).unwrap();
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded.publications[0].title, "Hello");
+        assert_eq!(loaded.publications[0].version, 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn publication_history_load_not_found() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let history = load_publication_history(&tmp, "nonexistent").unwrap();
+        assert!(history.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

@@ -191,6 +191,28 @@ enum ServiceCmd {
         #[arg(short, long, value_delimiter = ',')]
         tags: Vec<String>,
     },
+    /// 发布公众号文章 — 向所有订阅者推送内容 (S13R132)
+    Post {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 文章标题
+        #[arg(short, long)]
+        title: String,
+        /// 文章内容
+        #[arg(short, long)]
+        content: String,
+        /// 内容格式 (text 或 markdown)
+        #[arg(short = 't', long, default_value = "text")]
+        content_type: String,
+    },
+    /// 查看公众号发布历史 (S13R132)
+    History {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 最近 N 条
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -482,6 +504,13 @@ async fn run() -> errors::AcResult<()> {
                 description,
                 tags,
             } => cmd_service_publish(&service_id, &name, &endpoint, description.as_deref(), &tags)?,
+            ServiceCmd::Post {
+                service_id,
+                title,
+                content,
+                content_type,
+            } => cmd_service_post(&service_id, &title, &content, &content_type)?,
+            ServiceCmd::History { service_id, limit } => cmd_service_history(&service_id, limit)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2085,6 +2114,109 @@ fn cmd_service_publish(
     }
     println!();
     println!("💡 提示: 在 daemon 模式下，此服务将自动通过 GossipSub 广播到网络。");
+    Ok(())
+}
+
+// ── S13R132 Publication (公众号文章发布) ─────────────────────────
+
+fn cmd_service_post(
+    service_id: &str,
+    title: &str,
+    content: &str,
+    content_type_str: &str,
+) -> errors::AcResult<()> {
+    use agent_circle_core::publication::{ContentType, Publication, PublicationHistory};
+    use chrono::Utc;
+    use ed25519_dalek::Signer;
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+
+    let mut history = storage::load_publication_history(&data_dir, service_id)?;
+    if history.is_empty() {
+        history = PublicationHistory::new(service_id.to_string());
+    }
+
+    let ct = match content_type_str {
+        "markdown" | "md" => ContentType::Markdown,
+        _ => ContentType::Text,
+    };
+
+    let next_version = history
+        .publications
+        .first()
+        .map(|p| p.version + 1)
+        .unwrap_or(1);
+
+    let ts = Utc::now().timestamp_millis() as u64;
+    let rnd: u64 = rand::random();
+    let id = format!("{:016x}{:016x}", ts, rnd);
+
+    let identity = storage::load_identity(Some(&data_dir))?.ok_or_else(|| {
+        errors::AcError::Identity(
+            "no identity found; run `agent-circle identity create` first".into(),
+        )
+    })?;
+    let payload = format!(
+        "{}||{}||{}||{}||{}",
+        id, service_id, title, content, next_version
+    );
+    let sig = identity.signing_key.sign(payload.as_bytes());
+    let signature = hex::encode(sig.to_bytes());
+
+    let publication = Publication {
+        id,
+        service_id: service_id.to_string(),
+        title: title.to_string(),
+        content: content.to_string(),
+        content_type: ct,
+        timestamp: Utc::now(),
+        version: next_version,
+        signature,
+    };
+
+    history.push(publication.clone());
+    storage::save_publication_history(&history, &data_dir)?;
+
+    println!("📰 公众号文章已发布:");
+    println!("   服务:     {}", service_id);
+    println!("   标题:     {}", title);
+    println!("   版本:     v{}", publication.version);
+    println!("   ID:       {}", &publication.id[..8]);
+    println!(
+        "   时间:     {}",
+        publication.timestamp.format("%Y-%m-%d %H:%M:%S")
+    );
+    println!("   格式:     {}", content_type_str);
+    println!();
+    println!("💡 提示: 订阅者将在下次连接时收到推送通知。");
+    Ok(())
+}
+
+fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let history = storage::load_publication_history(&data_dir, service_id)?;
+
+    if history.is_empty() {
+        println!("📭 服务 '{}' 暂无发布历史。", service_id);
+        return Ok(());
+    }
+
+    println!("📚 {} 的发布历史 (共 {} 条):", service_id, history.len());
+    println!();
+    for (i, pub_msg) in history.publications.iter().take(limit).enumerate() {
+        println!(
+            "#{:<3} [v{}] {}  {}",
+            i + 1,
+            pub_msg.version,
+            pub_msg.title,
+            pub_msg.timestamp.format("%Y-%m-%d %H:%M")
+        );
+        println!(
+            "      ID: {}  |  格式: {:?}",
+            &pub_msg.id[..8],
+            pub_msg.content_type
+        );
+    }
     Ok(())
 }
 
