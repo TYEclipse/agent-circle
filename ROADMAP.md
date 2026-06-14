@@ -287,7 +287,7 @@
 | 131 | "公众号" 数据模型 | ✅ 10 类型 — Publication · History · Subscriber · Permission · Wire |
 | 132 | 服务发布（`agent-circle service post`） | ✅ post + history CLI — Ed25519 签名 + 持久化 |
 | 133 | 服务订阅（`agent-circle service subscribe`） | ✅ 订阅 → 本地通知推送 + notifications + read 命令 |
-| 134 | 服务发现（`agent-circle service discover`） | DHT 上发现公共服务 |
+| 134 | 服务发现（`agent-circle service discover`） | ✅ discover + --online 过滤 + 新鲜度分级 (daemon感知) |
 | 135 | 推送消息（服务 → 订阅者广播） | 公众号推送 → 所有订阅者收到 |
 | 136 | 消息格式（Markdown 支持） | 推送内容支持格式化 |
 | 137 | 服务评级/评论 | 订阅者可对服务打分 |
