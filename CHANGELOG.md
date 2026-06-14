@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S03R37/R38: Mock swarm 框架 + 集成测试** — `tests/common/` MockNode 进程内 P2P 节点，自动 ACK chat 消息；2 个集成测试 (单消息投递 + 多消息全部确认) 验证 end-to-end 消息流，无需真实 daemon
 - **S03R32: identity.rs 测试覆盖 → 100%** — 补充 9 个测试：decode_did_key 错误路径 (bad prefix/base58/multicodec/wrong length)、agent_card.verify 错误路径 (invalid proof encoding/length)、from_seed 确定性、to_seed_bytes 长度、verifying_key
 - **S03R33: storage.rs 测试覆盖 → 100%** — 补充 11 个测试：resolve_data_dir (default/override)、identity save/load (roundtrip/missing/wrong size)、card save/load、contacts add/list/duplicate、timeline save/load (roundtrip/missing)
 - **S02R24: 投递状态回调** — `chat send --track` 发送后等待 ACK/Failure 实时打印投递状态（✅ Delivered / ❌ Failed / ⏰ Pending）；`--timeout` 自定义超时（默认 30s）；`send_chat()` 现在返回 `OutboundRequestId`
