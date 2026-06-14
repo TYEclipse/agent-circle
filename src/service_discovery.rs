@@ -53,11 +53,13 @@ impl ServiceRegistry {
     }
 
     /// Look up services for a specific peer.
+    #[allow(dead_code)] // used by R103 CLI
     pub fn get(&self, peer_id: &str) -> Option<&[ServiceInfo]> {
         self.peers.get(peer_id).map(|v| v.as_slice())
     }
 
     /// Return all known services across all peers, as (peer_id, ServiceInfo) pairs.
+    #[allow(dead_code)] // used by R103 CLI
     pub fn all_services(&self) -> Vec<(String, ServiceInfo)> {
         self.peers
             .iter()
@@ -66,6 +68,7 @@ impl ServiceRegistry {
     }
 
     /// Search for services by name or tag.
+    #[allow(dead_code)] // used by R103 CLI
     pub fn search(&self, query: &str) -> Vec<(String, ServiceInfo)> {
         let q = query.to_lowercase();
         self.all_services()
