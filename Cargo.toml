@@ -68,6 +68,9 @@ futures = "0.3"
 # Pin time to avoid rcgen blanket-impl conflict and RUSTSEC-2026-0009
 time = "=0.3.47"
 
+[dev-dependencies]
+proptest = "1"
+
 # ── Debian packaging ──
 [package.metadata.deb]
 name = "agent-circle"
