@@ -1,0 +1,20 @@
+# Cargo Audit 豁免列表
+# 以下漏洞均为 libp2p 传递依赖 — 我们无法直接升级。
+# 跟踪 libp2p 新版本发布后重新评估。
+
+[advisories]
+ignore = [
+    # hickory-proto: CPU exhaustion O(n²) in name compression
+    # libp2p 传递依赖 — 等待 libp2p 升级
+    "RUSTSEC-2026-0119",
+
+    # hickory-proto: NSEC3 unbounded loop on cross-zone responses  
+    # 上游暂无修复 — 等待 libp2p 升级
+    "RUSTSEC-2026-0118",
+
+    # paste: no longer maintained (libp2p-gossipsub 传递依赖)
+    "RUSTSEC-2024-0436",
+
+    # lru: IterMut violates Stacked Borrows (libp2p-kad 传递依赖)
+    "RUSTSEC-2026-0002",
+]

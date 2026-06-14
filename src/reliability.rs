@@ -28,6 +28,7 @@ pub struct PendingEntry {
     pub from: String,
     pub content: String,
     pub ts: i64,
+    pub msg_id: u64,
     pub retries: u32,
     pub created_at: Instant,
 }
@@ -47,6 +48,7 @@ impl PendingTracker {
         from: String,
         content: String,
         ts: i64,
+        msg_id: u64,
     ) {
         self.pending.insert(
             id,
@@ -55,6 +57,7 @@ impl PendingTracker {
                 from,
                 content,
                 ts,
+                msg_id,
                 retries: 0,
                 created_at: Instant::now(),
             },
@@ -124,7 +127,7 @@ mod tests {
         let mut tracker = PendingTracker::new();
         let id = fake_id(1);
         let peer = fake_peer();
-        tracker.track(id, peer, "alice".into(), "hello".into(), 42);
+        tracker.track(id, peer, "alice".into(), "hello".into(), 42, 1);
         assert_eq!(tracker.len(), 1);
 
         let entry = tracker.ack(&id).unwrap();
@@ -141,7 +144,7 @@ mod tests {
         let id1 = fake_id(1);
         let peer = fake_peer();
 
-        tracker.track(id1, peer, "alice".into(), "ping".into(), 1);
+        tracker.track(id1, peer, "alice".into(), "ping".into(), 1, 2);
         assert_eq!(tracker.len(), 1);
 
         // First failure → should retry
@@ -165,7 +168,7 @@ mod tests {
         let peer = fake_peer();
 
         // Track initial send
-        tracker.track(ids[0], peer, "a".into(), "msg".into(), 0);
+        tracker.track(ids[0], peer, "a".into(), "msg".into(), 0, 3);
 
         // Fail 3 times (retries 1,2,3) — still within MAX_RETRIES
         for i in 0..3 {

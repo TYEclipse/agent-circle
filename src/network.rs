@@ -7,6 +7,7 @@
 //! Relay discovery: relay nodes broadcast their address via DHT
 
 use crate::chat::{ChatRequest, ChatResponse};
+use crate::dedup::DedupFilter;
 use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use crate::message_queue;
@@ -122,6 +123,7 @@ pub fn send_chat(
         from: from.to_string(),
         content: content.to_string(),
         ts: chrono::Utc::now().timestamp(),
+        msg_id: crate::chat::new_msg_id(),
     };
     swarm.behaviour_mut().chat.send_request(&peer_id, msg);
 }
@@ -214,6 +216,7 @@ pub async fn run_daemon(
     let mut bootstrapped = false;
     let mut relay_registered_or_discovered = false;
     let mut pending = PendingTracker::new();
+    let mut dedup = DedupFilter::new();
 
     loop {
         match swarm.select_next_some().await {
@@ -237,6 +240,7 @@ pub async fn run_daemon(
                             from: id.short_code.clone(),
                             content: entry.content.clone(),
                             ts: chrono::Utc::now().timestamp(),
+                            msg_id: crate::chat::new_msg_id(),
                         };
                         let req_id = swarm
                             .behaviour_mut()
@@ -248,6 +252,7 @@ pub async fn run_daemon(
                             id.short_code.clone(),
                             entry.content.clone(),
                             chat_req.ts,
+                            chat_req.msg_id,
                         );
                         let _ = q.mark_delivered(entry.id);
                         info!(peer = %peer_str, "✅ 离线消息已发送 （等待ACK）");
@@ -291,7 +296,12 @@ pub async fn run_daemon(
                     ..
                 },
             )) => {
-                info!(from = %request.from, content = %request.content, "收到私聊");
+                if dedup.is_dup(request.msg_id) {
+                    debug!(msg_id = request.msg_id, "🔄 重复消息，已跳过");
+                } else {
+                    info!(from = %request.from, msg_id = request.msg_id, content = %request.content, "收到私聊");
+                }
+                // Always ACK — even for duplicates — so sender knows it arrived
                 let _ = swarm
                     .behaviour_mut()
                     .chat
@@ -339,6 +349,7 @@ pub async fn run_daemon(
                             from: entry.from.clone(),
                             content: entry.content.clone(),
                             ts: chrono::Utc::now().timestamp(),
+                            msg_id: entry.msg_id,
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
                         pending.retrack(new_id, entry);

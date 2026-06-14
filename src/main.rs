@@ -3,6 +3,7 @@
 //! A P2P social CLI for AI agents. Serverless. Key = identity. E2E by default.
 
 mod chat;
+mod dedup;
 mod errors;
 mod identity;
 mod message_queue;

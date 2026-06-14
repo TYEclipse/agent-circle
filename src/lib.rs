@@ -3,6 +3,7 @@
 //! Re-exports all public modules.
 
 pub mod chat;
+pub mod dedup;
 pub mod errors;
 pub mod identity;
 pub mod message_queue;
