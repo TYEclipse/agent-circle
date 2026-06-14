@@ -79,6 +79,7 @@ impl Identity {
         owner: &str,
         model: &str,
         capabilities: &[String],
+        services: Vec<ServiceInfo>,
     ) -> Result<AgentCard> {
         let mut card = AgentCard {
             context: CARD_CONTEXT.to_string(),
@@ -87,6 +88,7 @@ impl Identity {
             owner: owner.to_string(),
             model: model.to_string(),
             capabilities: capabilities.to_vec(),
+            services,
             endpoints: vec![], // filled in when daemon starts
             status: "offline".to_string(),
             updated: chrono::Utc::now().to_rfc3339(),
@@ -159,6 +161,29 @@ fn encode_short_code(did: &str) -> String {
     hex::encode(&hash.as_bytes()[..4])
 }
 
+// ── Service Info ───────────────────────────────────────────────────
+
+/// A service registered by an agent — discoverable by peers on the DHT.
+///
+/// S10R101: Extends Agent Card with the `services` field so agents can
+/// advertise what they offer (weather bot, translator, relay, …).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceInfo {
+    /// Unique service identifier (e.g. "weather-v1").
+    pub id: String,
+    /// Human-readable name (e.g. "Weather Bot").
+    pub name: String,
+    /// The protocol endpoint this service listens on
+    /// (e.g. "/agent-circle/weather/1.0.0").
+    pub endpoint: String,
+    /// Optional description of what the service does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Searchable tags for discovery (e.g. ["weather", "forecast"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+}
+
 // ── Agent Card ─────────────────────────────────────────────────────
 
 /// A self-signed capability card — "what this agent is"
@@ -173,6 +198,9 @@ pub struct AgentCard {
     pub owner: String,
     pub model: String,
     pub capabilities: Vec<String>,
+    /// S10R101 — Services this agent provides.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<ServiceInfo>,
     pub endpoints: Vec<String>,
     pub status: String,
     pub updated: String,
@@ -189,6 +217,7 @@ impl AgentCard {
             "owner": self.owner,
             "model": self.model,
             "capabilities": self.capabilities,
+            "services": self.services,
             "endpoints": self.endpoints,
             "status": self.status,
             "updated": self.updated,
@@ -274,7 +303,7 @@ mod tests {
     fn test_agent_card_sign_and_verify() {
         let id = Identity::generate();
         let card = id
-            .create_card("TestBot", "human:test@example.com", "gpt-4", &[])
+            .create_card("TestBot", "human:test@example.com", "gpt-4", &[], vec![])
             .unwrap();
         assert!(card.verify().unwrap());
     }
@@ -283,7 +312,7 @@ mod tests {
     fn test_agent_card_tamper_detection() {
         let id = Identity::generate();
         let mut card = id
-            .create_card("TestBot", "human:test@example.com", "gpt-4", &[])
+            .create_card("TestBot", "human:test@example.com", "gpt-4", &[], vec![])
             .unwrap();
         // Tamper
         card.name = "EvilBot".to_string();
@@ -340,7 +369,7 @@ mod tests {
     #[test]
     fn agent_card_verify_invalid_proof_encoding() {
         let id = Identity::generate();
-        let mut card = id.create_card("Bot", "h:test", "gpt", &[]).unwrap();
+        let mut card = id.create_card("Bot", "h:test", "gpt", &[], vec![]).unwrap();
         card.proof = "!!!not-base58!!!".into();
         assert!(card.verify().is_err());
     }
@@ -348,7 +377,7 @@ mod tests {
     #[test]
     fn agent_card_verify_invalid_proof_length() {
         let id = Identity::generate();
-        let mut card = id.create_card("Bot", "h:test", "gpt", &[]).unwrap();
+        let mut card = id.create_card("Bot", "h:test", "gpt", &[], vec![]).unwrap();
         // base58-encode a 16-byte string (wrong sig length)
         card.proof = bs58::encode(&[0u8; 16]).into_string();
         assert!(card.verify().is_err());

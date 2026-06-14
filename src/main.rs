@@ -375,7 +375,7 @@ fn cmd_identity_create(
     }
 
     let id = Identity::generate();
-    let card = id.create_card(name, owner, model, capabilities)?;
+    let card = id.create_card(name, owner, model, capabilities, vec![])?;
 
     save_identity(&id, data_dir_opt())?;
     save_card(&card, data_dir_opt())?;
