@@ -97,7 +97,7 @@
 | 31 | `cargo tarpaulin` 行覆盖率基线 | CI 产出覆盖率报告 |
 | 32 | `identity.rs` 覆盖率 → 100% | 100% 行覆盖 |
 | 33 | `storage.rs` 覆盖率 → 100% | 100% 行覆盖 |
-| 34 | `protocol.rs` 覆盖率 → 100% | 100% 行覆盖 |
+| 34 | `protocol.rs` 覆盖率 → 100% | ⏭️ 跳过 — protocol.rs 不存在（handshake 在 network.rs + identity.rs），随 S09 补 |
 | 35 | `chat.rs` 覆盖率 → >90% | >90% 行覆盖 |
 | 36 | `timeline.rs` 覆盖率 → >90% | >90% 行覆盖 |
 | 37 | `network.rs` 集成测试增强 | swarm 行为模拟测试 |
