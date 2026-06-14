@@ -507,4 +507,145 @@ mod tests {
         let perm: ServicePermission = serde_json::from_str("\"public\"").unwrap();
         assert_eq!(perm, ServicePermission::Public);
     }
+
+    // ── S14R146 Wire protocol serde tests ────────────────────────
+
+    #[test]
+    fn test_publish_request_serde() {
+        let req = PublishRequest {
+            service_id: "weather-v1".into(),
+            title: "Storm Warning".into(),
+            content: "Heavy rain expected".into(),
+            content_type: ContentType::Text,
+            expected_version: 3,
+            signature: "0xdeadbeef".into(),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: PublishRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.service_id, "weather-v1");
+        assert_eq!(decoded.expected_version, 3);
+        assert_eq!(decoded.content_type, ContentType::Text);
+    }
+
+    #[test]
+    fn test_publish_response_success() {
+        let resp = PublishResponse {
+            publication: Some(Publication {
+                id: "abc".into(),
+                service_id: "svc".into(),
+                title: "T".into(),
+                content: "C".into(),
+                content_type: ContentType::Markdown,
+                timestamp: Utc::now(),
+                version: 1,
+                signature: String::new(),
+            }),
+            error: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let decoded: PublishResponse = serde_json::from_str(&json).unwrap();
+        assert!(decoded.publication.is_some());
+        assert!(decoded.error.is_none());
+    }
+
+    #[test]
+    fn test_publish_response_error() {
+        let resp = PublishResponse {
+            publication: None,
+            error: Some("signature verification failed".into()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let decoded: PublishResponse = serde_json::from_str(&json).unwrap();
+        assert!(decoded.publication.is_none());
+        assert_eq!(decoded.error.unwrap(), "signature verification failed");
+    }
+
+    #[test]
+    fn test_subscribe_request_serde() {
+        let req = SubscribeRequest {
+            service_id: "did:key:svc".into(),
+            subscriber_did: "did:key:alice".into(),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: SubscribeRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.service_id, "did:key:svc");
+        assert_eq!(decoded.subscriber_did, "did:key:alice");
+    }
+
+    #[test]
+    fn test_subscribe_response_serde() {
+        let resp = SubscribeResponse {
+            accepted: true,
+            message: "Subscription confirmed".into(),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let decoded: SubscribeResponse = serde_json::from_str(&json).unwrap();
+        assert!(decoded.accepted);
+        assert_eq!(decoded.message, "Subscription confirmed");
+
+        let rejected = SubscribeResponse {
+            accepted: false,
+            message: "Whitelist rejection".into(),
+        };
+        let json = serde_json::to_string(&rejected).unwrap();
+        let decoded: SubscribeResponse = serde_json::from_str(&json).unwrap();
+        assert!(!decoded.accepted);
+    }
+
+    #[test]
+    fn test_discover_request_serde() {
+        let req = DiscoverRequest {
+            service_id: "news-v1".into(),
+            limit: 10,
+            offset: 5,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: DiscoverRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.service_id, "news-v1");
+        assert_eq!(decoded.limit, 10);
+        assert_eq!(decoded.offset, 5);
+    }
+
+    #[test]
+    fn test_discover_request_default_limit() {
+        let json = r#"{"service_id":"news-v1"}"#;
+        let req: DiscoverRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.limit, 20);
+        assert_eq!(req.offset, 0);
+    }
+
+    #[test]
+    fn test_discover_response_serde() {
+        let resp = DiscoverResponse {
+            publications: vec![
+                Publication {
+                    id: "p1".into(),
+                    service_id: "svc".into(),
+                    title: "First".into(),
+                    content: "Hello".into(),
+                    content_type: ContentType::Text,
+                    timestamp: Utc::now(),
+                    version: 2,
+                    signature: String::new(),
+                },
+                Publication {
+                    id: "p2".into(),
+                    service_id: "svc".into(),
+                    title: "Second".into(),
+                    content: "World".into(),
+                    content_type: ContentType::Markdown,
+                    timestamp: Utc::now(),
+                    version: 1,
+                    signature: "sig".into(),
+                },
+            ],
+            total: 42,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let decoded: DiscoverResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.publications.len(), 2);
+        assert_eq!(decoded.total, 42);
+        assert_eq!(decoded.publications[0].title, "First");
+        assert_eq!(decoded.publications[1].content_type, ContentType::Markdown);
+    }
 }
