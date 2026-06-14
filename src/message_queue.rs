@@ -18,9 +18,11 @@ pub struct QueueEntry {
 }
 
 pub struct Queue {
+    #[allow(dead_code)]
     conn: Connection,
 }
 
+#[allow(dead_code)]
 impl Queue {
     /// Open (or create) the offline queue database.
     pub fn open(data_dir: &Path) -> Result<Self, rusqlite::Error> {
@@ -94,17 +96,21 @@ impl Queue {
 
     /// Return queue stats: (pending, delivered, failed>3)
     pub fn stats(&self) -> Result<(i64, i64, i64), rusqlite::Error> {
-        let pending: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM messages WHERE delivered = 0", [], |r| r.get(0))?;
-        let delivered: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM messages WHERE delivered = 1", [], |r| r.get(0))?;
-        let failed: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM messages WHERE retries > 3 AND delivered = 0", [], |r| {
-                r.get(0)
-            })?;
+        let pending: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE delivered = 0",
+            [],
+            |r| r.get(0),
+        )?;
+        let delivered: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE delivered = 1",
+            [],
+            |r| r.get(0),
+        )?;
+        let failed: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM messages WHERE retries > 3 AND delivered = 0",
+            [],
+            |r| r.get(0),
+        )?;
         Ok((pending, delivered, failed))
     }
 

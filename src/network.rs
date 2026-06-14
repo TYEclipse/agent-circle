@@ -19,10 +19,10 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
+use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
-use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 /// DHT key for relay node discovery. Relay nodes publish their addresses under this record key.
@@ -192,7 +192,12 @@ fn ed25519_to_libp2p_keypair(id: &Identity) -> AcResult<libp2p::identity::Keypai
 
 // ── Daemon ─────────────────────────────────────────────────────────
 
-pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool, data_dir: &std::path::Path) -> AcResult<()> {
+pub async fn run_daemon(
+    id: &Identity,
+    groups: &[String],
+    relay_mode: bool,
+    data_dir: &std::path::Path,
+) -> AcResult<()> {
     let mut swarm = build_swarm(id)?;
     let local_peer_id = *swarm.local_peer_id();
 
@@ -223,29 +228,19 @@ pub async fn run_daemon(id: &Identity, groups: &[String], relay_mode: bool, data
             } => {
                 info!(peer_id = %peer_id, connections = num_established, "已连接");
                 // Flush offline queue for this peer
-                let data_dir = crate::storage::resolve_data_dir(crate::storage::data_dir_opt())
-                    .unwrap_or_else(|_| std::path::PathBuf::from(".agent-circle"));
-                if let Ok(q) = message_queue::Queue::open(&data_dir) {
+                if let Ok(q) = message_queue::Queue::open(data_dir) {
                     let peer_str = peer_id.to_string();
-                    let pending = match q.pending_for(&peer_str) {
-                        Ok(p) => p,
-                        Err(_) => Vec::new(),
-                    };
+                    let pending = q.pending_for(&peer_str).unwrap_or_default();
                     for entry in pending {
                         info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
                         let chat_req = ChatRequest {
-                            from: id.name.clone(),
+                            from: id.short_code.clone(),
                             content: entry.content.clone(),
+                            ts: chrono::Utc::now().timestamp(),
                         };
-                        if let Err(e) = swarm.behaviour_mut().chat.send_request(
-                            &peer_id, chat_req,
-                        ) {
-                            warn!(error = %e, "离线消息重试发送失败");
-                            let _ = q.mark_failed(entry.id, &e.to_string());
-                        } else {
-                            let _ = q.mark_delivered(entry.id);
-                            info!(peer = %peer_str, "✅ 离线消息已送达");
-                        }
+                        let _req_id = swarm.behaviour_mut().chat.send_request(&peer_id, chat_req);
+                        let _ = q.mark_delivered(entry.id);
+                        info!(peer = %peer_str, "✅ 离线消息已发送");
                     }
                 }
             }
