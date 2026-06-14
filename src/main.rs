@@ -3,6 +3,7 @@
 //! A P2P social CLI for AI agents. Serverless. Key = identity. E2E by default.
 
 mod chat;
+mod control;
 mod dedup;
 mod diag;
 mod errors;
@@ -37,7 +38,7 @@ static RELOAD_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::
 #[command(name = "agent-circle")]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// 数据目录（默认 ~/.agent-circle/）
+    /// 数据目录（默认 $AGENT_CIRCLE_HOME 或 ~/.agent-circle/）
     #[arg(long, global = true)]
     data_dir: Option<PathBuf>,
 
@@ -221,6 +222,15 @@ enum DaemonCmd {
     },
     /// 查看守护进程状态
     Status,
+    /// 动态切换日志级别 (Linux/macOS/Windows 通用)
+    LogLevel {
+        /// 目标级别: error | warn | info | debug | trace
+        level: String,
+    },
+    /// 安装为系统服务 (systemd / launchd / WinSW)
+    Install,
+    /// 卸载系统服务
+    Uninstall,
 }
 
 fn init_tracing(json: bool) {
@@ -282,6 +292,9 @@ async fn run() -> errors::AcResult<()> {
         Commands::Daemon { cmd } => match cmd {
             DaemonCmd::Start { group, relay } => cmd_daemon_start(&group, relay).await?,
             DaemonCmd::Status => cmd_daemon_status()?,
+            DaemonCmd::LogLevel { level } => cmd_daemon_log_level(&level).await?,
+            DaemonCmd::Install => cmd_daemon_install()?,
+            DaemonCmd::Uninstall => cmd_daemon_uninstall()?,
         },
         Commands::Contact(cmd) => match cmd {
             ContactCmd::Add { peer_id, name, did } => cmd_contact_add(&name, &peer_id, &did)?,
@@ -429,8 +442,25 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
         }
     };
 
-    // Spawn SIGUSR1 handler for dynamic log level switching
-    // NOTE: WSL2 has signal delivery quirks; tested on native Linux/macOS
+    // S07R75 — Cross-platform control socket (replaces Unix-only SIGUSR1)
+    // Spawn a local TCP listener so `agent-circle daemon log-level <LEVEL>`
+    // works on Linux, macOS, and Windows alike.
+    if let Some(handle) = RELOAD_HANDLE.get().cloned() {
+        let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+        match control::spawn_control_server(handle).await {
+            Ok(addr) => {
+                let port_path = data_dir.join("control.port");
+                if let Err(e) = std::fs::write(&port_path, addr.port().to_string()) {
+                    tracing::warn!(%e, "无法写入 control.port");
+                } else {
+                    tracing::info!(port = %addr.port(), "📡 控制端口已启动");
+                }
+            }
+            Err(e) => tracing::warn!(%e, "控制端口启动失败 (log-level 命令不可用)"),
+        }
+    }
+
+    // SIGUSR1 → cycle log level (Unix only, bonus fallback)
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
@@ -445,7 +475,7 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
                             idx = (idx + 1) % levels.len();
                             let new_level = levels[idx];
                             let _ = handle.reload(EnvFilter::new(new_level));
-                            tracing::info!(%new_level, "📶 日志级别已切换");
+                            tracing::info!(%new_level, "📶 日志级别已切换 (SIGUSR1)");
                         }
                     });
                 }
@@ -465,11 +495,263 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
 fn cmd_daemon_status() -> errors::AcResult<()> {
     let dir = storage::resolve_data_dir(data_dir_opt())?;
     let sock = dir.join("daemon.sock");
-    if sock.exists() {
-        println!("✅ 守护进程正在运行 (socket: {})", sock.display());
+    let port_file = dir.join("control.port");
+    if sock.exists() || port_file.exists() {
+        let running = if sock.exists() {
+            format!("socket: {}", sock.display())
+        } else {
+            format!(
+                "control port: {}",
+                std::fs::read_to_string(&port_file)
+                    .unwrap_or_default()
+                    .trim()
+            )
+        };
+        println!("✅ 守护进程正在运行 ({running})");
+        println!("   动态日志: agent-circle daemon log-level <LEVEL>");
     } else {
         println!("⏸️  守护进程未运行。启动: agent-circle daemon start");
     }
+    Ok(())
+}
+
+/// S07R75 — Connect to daemon control socket and switch log level.
+async fn cmd_daemon_log_level(level: &str) -> errors::AcResult<()> {
+    let levels: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+    if !levels.contains(&level) {
+        return Err(errors::AcError::Network(format!(
+            "无效日志级别 '{level}'。可选: {}",
+            levels.join(", ")
+        )));
+    }
+
+    let dir = storage::resolve_data_dir(data_dir_opt())?;
+    let port_path = dir.join("control.port");
+    let port_str = std::fs::read_to_string(&port_path).map_err(|e| {
+        errors::AcError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "守护进程未运行或 control.port 不可读: {e}\n请先启动: agent-circle daemon start"
+            ),
+        ))
+    })?;
+    let port: u16 = port_str
+        .trim()
+        .parse()
+        .map_err(|e| errors::AcError::Network(format!("无效端口号 '{port_str}': {e}")))?;
+
+    let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}")).await?;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let (reader, mut writer) = stream.split();
+    let mut buf_reader = BufReader::new(reader);
+
+    writer
+        .write_all(format!("log-level {level}\n").as_bytes())
+        .await?;
+
+    let mut response = String::new();
+    buf_reader.read_line(&mut response).await?;
+    println!("📶 日志级别: {response}");
+    Ok(())
+}
+
+/// S07R76-R78 — Install agent-circle as a system service.
+///
+/// Platform mapping:
+///   Linux   → systemd user unit  (~/.config/systemd/user/agent-circle.service)
+///   macOS   → launchd plist      (~/Library/LaunchAgents/com.agent-circle.daemon.plist)
+///   Windows → WinSW XML          (next to agent-circle.exe)
+fn cmd_daemon_install() -> errors::AcResult<()> {
+    let bin_path = std::env::current_exe().map_err(|e| {
+        errors::AcError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("无法获取可执行文件路径: {e}"),
+        ))
+    })?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let home = dirs::home_dir().ok_or_else(|| {
+            errors::AcError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "无法确定 home 目录",
+            ))
+        })?;
+        let unit_dir = home.join(".config/systemd/user");
+        std::fs::create_dir_all(&unit_dir)?;
+        let unit_path = unit_dir.join("agent-circle.service");
+
+        let unit = format!(
+            "[Unit]\nDescription=Agent Circle P2P Daemon\nAfter=network.target\n\n\
+             [Service]\nType=simple\nExecStart={} daemon start\nRestart=on-failure\n\
+             RestartSec=5\nEnvironment=RUST_LOG=info\n\n\
+             [Install]\nWantedBy=default.target\n",
+            bin_path.display()
+        );
+
+        std::fs::write(&unit_path, &unit)?;
+        println!("✅ systemd user unit → {}", unit_path.display());
+        println!();
+        println!("启用服务:");
+        println!("  systemctl --user enable --now agent-circle");
+        println!("  systemctl --user status agent-circle");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let launch_dir = dirs::home_dir()
+            .ok_or_else(|| {
+                errors::AcError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "无法确定 home 目录",
+                ))
+            })?
+            .join("Library/LaunchAgents");
+        std::fs::create_dir_all(&launch_dir)?;
+        let plist_path = launch_dir.join("com.agent-circle.daemon.plist");
+
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\"\n  \
+             \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+             <plist version=\"1.0\">\n<dict>\n  \
+             <key>Label</key>\n  <string>com.agent-circle.daemon</string>\n  \
+             <key>ProgramArguments</key>\n  <array>\n    \
+             <string>{}</string>\n    \
+             <string>daemon</string>\n    \
+             <string>start</string>\n  </array>\n  \
+             <key>RunAtLoad</key>\n  <true/>\n  \
+             <key>KeepAlive</key>\n  <true/>\n  \
+             <key>StandardOutPath</key>\n  <string>/tmp/agent-circle.out</string>\n  \
+             <key>StandardErrorPath</key>\n  <string>/tmp/agent-circle.err</string>\n\
+             </dict>\n</plist>\n",
+            bin_path.display()
+        );
+
+        std::fs::write(&plist_path, &plist)?;
+        println!("✅ launchd plist → {}", plist_path.display());
+        println!();
+        println!("加载服务:");
+        println!("  launchctl load {}", plist_path.display());
+    }
+
+    #[cfg(windows)]
+    {
+        let svc_dir = bin_path.parent().ok_or_else(|| {
+            errors::AcError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "无法确定可执行文件所在目录",
+            ))
+        })?;
+        let xml_path = svc_dir.join("agent-circle-service.xml");
+
+        let xml = format!(
+            "<service>\n  \
+             <id>agent-circle</id>\n  \
+             <name>Agent Circle P2P Daemon</name>\n  \
+             <description>AI 智能体的 P2P 社交网络守护进程</description>\n  \
+             <executable>{}</executable>\n  \
+             <arguments>daemon start</arguments>\n  \
+             <log mode=\"roll-by-size\">\n    \
+             <sizeThreshold>10485760</sizeThreshold>\n    \
+             <keepFiles>5</keepFiles>\n  </log>\n  \
+             <onfailure action=\"restart\" delay=\"5 sec\"/>\n  \
+             <env name=\"RUST_LOG\" value=\"info\"/>\n\
+             </service>\n",
+            bin_path.display()
+        );
+
+        std::fs::write(&xml_path, &xml)?;
+        println!("✅ WinSW 配置 → {}", xml_path.display());
+        println!();
+        println!("将 WinSW.exe 重命名为 agent-circle-service.exe 放到同目录，然后:");
+        println!("  agent-circle-service.exe install");
+        println!("  agent-circle-service.exe start");
+    }
+
+    Ok(())
+}
+
+/// Uninstall the system service (remove the config file).
+fn cmd_daemon_uninstall() -> errors::AcResult<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let home = dirs::home_dir().ok_or_else(|| {
+            errors::AcError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "无法确定 home 目录",
+            ))
+        })?;
+        let unit_path = home.join(".config/systemd/user/agent-circle.service");
+        if unit_path.exists() {
+            // Try to stop + disable first (best-effort)
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "stop", "agent-circle"])
+                .output();
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "disable", "agent-circle"])
+                .output();
+            std::fs::remove_file(&unit_path)?;
+            println!("✅ 已移除: {}", unit_path.display());
+        } else {
+            println!("ℹ️  未找到已安装的服务");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = dirs::home_dir()
+            .ok_or_else(|| {
+                errors::AcError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "无法确定 home 目录",
+                ))
+            })?
+            .join("Library/LaunchAgents/com.agent-circle.daemon.plist");
+        if plist_path.exists() {
+            let _ = std::process::Command::new("launchctl")
+                .args(["unload", plist_path.to_str().unwrap_or("")])
+                .output();
+            std::fs::remove_file(&plist_path)?;
+            println!("✅ 已移除: {}", plist_path.display());
+        } else {
+            println!("ℹ️  未找到已安装的服务");
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let svc_dir = std::env::current_exe()
+            .map_err(|e| {
+                errors::AcError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("无法获取 exe 路径: {e}"),
+                ))
+            })?
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| {
+                errors::AcError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "无法确定 exe 目录",
+                ))
+            })?;
+        let xml_path = svc_dir.join("agent-circle-service.xml");
+        if xml_path.exists() {
+            // Try to stop + uninstall first (best-effort)
+            let _ = std::process::Command::new(svc_dir.join("agent-circle-service.exe"))
+                .arg("stop")
+                .output();
+            let _ = std::process::Command::new(svc_dir.join("agent-circle-service.exe"))
+                .arg("uninstall")
+                .output();
+            std::fs::remove_file(&xml_path)?;
+            println!("✅ 已移除: {}", xml_path.display());
+        } else {
+            println!("ℹ️  未找到已安装的服务");
+        }
+    }
+
     Ok(())
 }
 

@@ -17,10 +17,22 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Resolve the data directory, accepting an optional override.
+///
+/// Priority (highest first):
+///   1. `--data-dir` CLI flag
+///   2. `AGENT_CIRCLE_HOME` environment variable
+///   3. `~/.agent-circle/` (cross-platform via `dirs::home_dir`)
 pub fn resolve_data_dir(override_dir: Option<&PathBuf>) -> AcResult<PathBuf> {
     if let Some(dir) = override_dir {
         fs::create_dir_all(dir)?;
         return Ok(dir.clone());
+    }
+
+    // S07R74: support AGENT_CIRCLE_HOME env var for cross-platform flexibility
+    if let Ok(custom) = std::env::var("AGENT_CIRCLE_HOME") {
+        let dir = PathBuf::from(custom);
+        fs::create_dir_all(&dir)?;
+        return Ok(dir);
     }
 
     let home = dirs::home_dir().ok_or_else(|| {

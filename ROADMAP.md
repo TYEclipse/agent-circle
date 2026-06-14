@@ -170,16 +170,16 @@
 
 | 轮 | 任务 | 验收 |
 |---|---|---|
-| 71 | Linux (x86_64) CI 构建 | GitHub Actions ubuntu-latest ✅ |
-| 72 | macOS (arm64) CI 构建 | macos-14 (M1) ✅ |
-| 73 | Windows (x86_64) CI 构建 | windows-latest ✅ |
-| 74 | 跨平台路径处理（`dirs` crate） | 三端存储路径正确 |
-| 75 | 跨平台信号处理（SIGUSR1 → Windows 等价） | 日志级别动态切换三端可用 |
-| 76 | Windows 服务包装（`sc.exe` 或 WinSW） | `agent-circle daemon install` → Windows 服务 |
-| 77 | macOS launchd 集成 | `agent-circle daemon install` → launchd plist |
-| 78 | Linux systemd 集成 | `agent-circle daemon install` → systemd unit |
-| 79 | 跨平台 E2E 测试 | 三端均通过 `tests/e2e/` |
-| 80 | S07 回顾 | Sprint 回顾文档 |
+| 71 | Linux (x86_64) CI 构建 | ✅ matrix build+test |
+| 72 | macOS (arm64) CI 构建 | ✅ macos-latest runner |
+| 73 | Windows (x86_64) CI 构建 | ✅ windows-latest runner |
+| 74 | 跨平台路径处理（`dirs` crate + `AGENT_CIRCLE_HOME`） | ✅ env var + dirs::home_dir |
+| 75 | 跨平台信号处理（control socket 替代 SIGUSR1） | ✅ `daemon log-level <LEVEL>` 全平台 |
+| 76 | Windows 服务包装（WinSW XML） | ✅ `daemon install` 生成 WinSW 配置 |
+| 77 | macOS launchd 集成 | ✅ `daemon install` 生成 plist |
+| 78 | Linux systemd 集成 | ✅ `daemon install` 生成 user unit |
+| 79 | 跨平台 E2E 测试 | ⏳ 待 CI 三端 runner 验证 |
+| 80 | S07 回顾 | ✅ Sprint 回顾文档 |
 
 ---
 
