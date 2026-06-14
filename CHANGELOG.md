@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### S13 · 公众号 (Agent 服务发布) 🔄
+
+- **S13R133: 服务订阅 → 本地通知推送** — `service notifications` 查看待读推送；`service read <服务>` 标记已读；`service post` 发布时自动扫描订阅并写入通知文件 (`notifications.json`)；新增 `storage::{load,save,notify_subscriber,clear}_notifications` API
+- **S13R132: 公众号发布 CLI** — `service post --title --content [-t markdown]` Ed25519 签名发布；`service history <服务>` 查看发布历史
+- **S13R131: 公众号数据模型** — `agent-circle-core::publication` 10 类型（Publication/History/Subscriber/Permission/Wire Protocol）
+
 ### S12 · 文档 + 打包 (保障性) ✅
 
 - **S12R130: S12 回顾** — `docs/S12-retrospective.md` 闭合文档：10/10 完成，5 种打包格式就绪，总进度 65%

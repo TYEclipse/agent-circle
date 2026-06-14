@@ -213,6 +213,13 @@ enum ServiceCmd {
         #[arg(short, long, default_value = "20")]
         limit: usize,
     },
+    /// 查看订阅服务的待读推送 (S13R133)
+    Notifications,
+    /// 标记已读 — 清除指定服务的推送通知 (S13R133)
+    Read {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -511,6 +518,8 @@ async fn run() -> errors::AcResult<()> {
                 content_type,
             } => cmd_service_post(&service_id, &title, &content, &content_type)?,
             ServiceCmd::History { service_id, limit } => cmd_service_history(&service_id, limit)?,
+            ServiceCmd::Notifications => cmd_service_notifications()?,
+            ServiceCmd::Read { service_id } => cmd_service_read(&service_id)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -2189,9 +2198,23 @@ fn cmd_service_post(
     println!("   格式:     {}", content_type_str);
     println!();
     println!("💡 提示: 订阅者将在下次连接时收到推送通知。");
+    println!();
+
+    // Notify local subscribers (S13R133)
+    let subs = service_discovery::load_subscriptions(&data_dir)?;
+    let mut notified = 0usize;
+    for s in subs.list() {
+        if s.service_id == service_id {
+            storage::notify_subscriber(&data_dir, &s.service_id, &publication.id)?;
+            notified += 1;
+        }
+    }
+    if notified > 0 {
+        println!("📬 已通知 {} 位本地订阅者。", notified);
+    }
+
     Ok(())
 }
-
 fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
     let history = storage::load_publication_history(&data_dir, service_id)?;
@@ -2304,6 +2327,68 @@ fn cmd_service_subscriptions() -> errors::AcResult<()> {
         };
         println!("   • {:<30}  [{}]  {}", target, label, ago);
     }
+    Ok(())
+}
+
+// ── Publication notification commands (S13R133) ──────────────────
+
+/// List pending publication notifications from subscribed services.
+fn cmd_service_notifications() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let notifications = storage::load_notifications(&data_dir)?;
+
+    if notifications.is_empty() {
+        println!("📭 暂无待读推送通知。");
+        println!("   使用 `agent-circle service subscribe <服务名>` 订阅服务;");
+        println!("   服务发布新文章后将自动推送到此列表。");
+        return Ok(());
+    }
+
+    let mut total = 0usize;
+    println!("📬 待读推送通知:\n");
+    for (service_id, pub_ids) in &notifications {
+        println!("   📰 服务: {}", service_id);
+        if let Ok(history) = storage::load_publication_history(&data_dir, service_id) {
+            for pid in pub_ids {
+                if let Some(pub_msg) = history.publications.iter().find(|p| &p.id == pid) {
+                    println!(
+                        "      • [v{}] {} — {}",
+                        pub_msg.version,
+                        pub_msg.title,
+                        pub_msg.timestamp.format("%Y-%m-%d %H:%M")
+                    );
+                    total += 1;
+                } else {
+                    println!("      • [已删除] ({})", &pid[..8]);
+                }
+            }
+        } else {
+            println!("      ⚠️  无法加载发布历史");
+        }
+        println!();
+    }
+
+    println!("📊 共 {} 条未读推送", total);
+    println!("💡 使用 `agent-circle service read <服务名>` 标记已读");
+    Ok(())
+}
+
+/// Mark all notifications for a service as read.
+fn cmd_service_read(service_id: &str) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let notifications = storage::load_notifications(&data_dir)?;
+
+    let count = notifications.get(service_id).map(|v| v.len()).unwrap_or(0);
+    if count == 0 {
+        println!("📭 服务 '{}' 没有待读通知。", service_id);
+        return Ok(());
+    }
+
+    storage::clear_notifications(&data_dir, service_id)?;
+    println!(
+        "✅ 已读 — {} 条来自 '{}' 的推送通知已清除。",
+        count, service_id
+    );
     Ok(())
 }
 
