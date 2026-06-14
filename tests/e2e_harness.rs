@@ -1,36 +1,19 @@
-// S18R181 — E2E Test Harness
-// Spawns N agent-circle nodes with real libp2p swarms,
-// connects them, and provides assertion helpers.
-//
-// Usage:
-//   #[tokio::test]
-//   async fn my_e2e_test() {
-//       let mut cluster = E2eCluster::spawn(2).await; // 2 nodes
-//       cluster.connect_all().await;                    // mesh them
-//       let node_a = &mut cluster.nodes[0];
-//       let node_b = &mut cluster.nodes[1];
-//       // ... assertions ...
-//   }
+// S18 E2E Test Harness — shared module for e2e_tests.rs
 
 #![allow(dead_code)]
 
-use agent_circle::chat::ChatRequest;
 use agent_circle::identity::Identity;
 use agent_circle::network;
 use agent_circle::network::AgentCircleBehaviourEvent;
 use futures::StreamExt;
 use libp2p::gossipsub;
+use libp2p::request_response;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{Multiaddr, PeerId, Swarm};
 use std::time::Duration;
 
-/// Default timeout for E2E operations.
 pub const E2E_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Default settle time between actions.
-pub const E2E_SETTLE: Duration = Duration::from_secs(2);
-
-/// A single E2E node holding a swarm and identity.
 pub struct E2eNode {
     pub name: String,
     pub identity: Identity,
@@ -39,23 +22,19 @@ pub struct E2eNode {
     pub listen_addr: Option<Multiaddr>,
 }
 
-/// A cluster of E2E nodes connected via loopback.
 pub struct E2eCluster {
     pub nodes: Vec<E2eNode>,
 }
 
 impl E2eCluster {
-    /// Spawn `n` nodes, each with its own identity and swarm.
-    /// Returns after each node has acquired a listen address.
     pub async fn spawn(n: usize) -> Self {
         let mut nodes = Vec::with_capacity(n);
         for i in 0..n {
             let name = format!("node-{i}");
             let identity = Identity::generate();
-            let mut swarm = network::build_swarm(&identity)
-                .expect("build_swarm should succeed in E2E");
+            let mut swarm =
+                network::build_swarm(&identity).expect("build_swarm should succeed in E2E");
 
-            // Wait for listen address
             let addr = loop {
                 tokio::select! {
                     event = swarm.select_next_some() => {
@@ -69,30 +48,24 @@ impl E2eCluster {
                 }
             };
 
-            let peer_id = *swarm.local_peer_id();
-            tracing::info!(%name, %peer_id, %addr, "E2E node spawned");
-
             nodes.push(E2eNode {
                 name,
+                peer_id: *swarm.local_peer_id(),
                 identity,
-                peer_id,
                 swarm,
                 listen_addr: Some(addr),
             });
         }
-
         Self { nodes }
     }
 
-    /// Dial every node to every other node in a full mesh.
-    /// Skips self-dial.
+    #[allow(clippy::needless_range_loop)]
     pub async fn connect_all(&mut self) {
-        // Collect addresses first (borrow issue)
         let addrs: Vec<(usize, Multiaddr)> = self
             .nodes
             .iter()
             .enumerate()
-            .filter_map(|(i, n)| n.listen_addr.map(|a| (i, a)))
+            .filter_map(|(i, n)| n.listen_addr.as_ref().map(|a| (i, a.clone())))
             .collect();
 
         for i in 0..self.nodes.len() {
@@ -107,60 +80,45 @@ impl E2eCluster {
             }
         }
 
-        // Wait for connections to establish
         let deadline = tokio::time::Instant::now() + E2E_TIMEOUT;
-        let target_peers = self.nodes.len() - 1;
-        let mut connected: Vec<usize> = vec![0; self.nodes.len()];
+        let target = self.nodes.len() - 1;
+        let mut connected = vec![0; self.nodes.len()];
 
         loop {
             if tokio::time::Instant::now() > deadline {
                 break;
             }
-            let all_connected = connected.iter().all(|&c| c >= target_peers);
-            if all_connected {
+            if connected.iter().all(|&c| c >= target) {
                 break;
             }
-
             for i in 0..self.nodes.len() {
                 tokio::select! {
                     event = self.nodes[i].swarm.select_next_some() => {
                         if let SwarmEvent::ConnectionEstablished { .. } = event {
                             connected[i] += 1;
-                            tracing::info!("{} connected ({} peers)", self.nodes[i].name, connected[i]);
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {}
                 }
             }
         }
-
-        tracing::info!(
-            peers = ?connected,
-            "E2E cluster all connected"
-        );
     }
 
-    /// Join all nodes to the given GossipSub group.
     pub fn join_group_all(&mut self, group: &str) {
         for node in &mut self.nodes {
-            network::join_group(&mut node.swarm, group)
-                .expect("join_group should succeed");
+            network::join_group(&mut node.swarm, group).expect("join_group");
         }
     }
 
-    /// Wait for all nodes to be subscribed to a GossipSub topic.
-    pub async fn wait_for_mesh(&mut self, expected_peers: usize) {
+    #[allow(clippy::needless_range_loop)]
+    pub async fn wait_for_mesh(&mut self) {
         let deadline = tokio::time::Instant::now() + E2E_TIMEOUT;
         let mut meshed = vec![false; self.nodes.len()];
 
         loop {
-            if tokio::time::Instant::now() > deadline {
+            if tokio::time::Instant::now() > deadline || meshed.iter().all(|&m| m) {
                 break;
             }
-            if meshed.iter().all(|&m| m) {
-                break;
-            }
-
             for i in 0..self.nodes.len() {
                 if meshed[i] {
                     continue;
@@ -171,38 +129,50 @@ impl E2eCluster {
                             gossipsub::Event::Subscribed { .. },
                         )) = event {
                             meshed[i] = true;
-                            tracing::info!("{} meshed", self.nodes[i].name);
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(500)) => {}
                 }
             }
         }
-
-        assert!(
-            meshed.iter().all(|&m| m),
-            "Not all nodes meshed: {:?}",
-            meshed
-        );
+        assert!(meshed.iter().all(|&m| m), "Not all meshed: {meshed:?}");
     }
 
-    /// Publish a chat message from a node to a group.
-    /// Uses network::broadcast_chat.
     pub fn broadcast(&mut self, node_idx: usize, group: &str, content: &str) {
-        let node = &self.nodes[node_idx];
-        network::broadcast_chat(
-            &mut self.nodes[node_idx].swarm,
-            group,
-            &node.identity.did,
-            content,
-        );
+        let did = self.nodes[node_idx].identity.did.clone();
+        let _ = network::send_group_message(&mut self.nodes[node_idx].swarm, group, &did, content);
     }
 
-    /// Wait for a message to be received by any node.
-    /// Returns (node_idx, content).
+    pub fn send_chat(&mut self, from_idx: usize, to_idx: usize, content: &str) {
+        let to_peer = self.nodes[to_idx].peer_id;
+        let did = self.nodes[from_idx].identity.did.clone();
+        network::send_chat(&mut self.nodes[from_idx].swarm, to_peer, &did, content);
+    }
+
+    pub async fn wait_for_chat(&mut self, node_idx: usize, timeout: Duration) -> Option<String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if tokio::time::Instant::now() > deadline {
+                return None;
+            }
+            tokio::select! {
+                event = self.nodes[node_idx].swarm.select_next_some() => {
+                    if let SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
+                        request_response::Event::Message {
+                            message: request_response::Message::Request { request, .. },
+                            ..
+                        },
+                    )) = event {
+                        return Some(request.content);
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            }
+        }
+    }
+
     pub async fn wait_for_message(&mut self, timeout: Duration) -> Option<(usize, String)> {
         let deadline = tokio::time::Instant::now() + timeout;
-
         loop {
             if tokio::time::Instant::now() > deadline {
                 return None;
@@ -214,7 +184,6 @@ impl E2eCluster {
                             gossipsub::Event::Message { message, .. },
                         )) = event {
                             let content = String::from_utf8_lossy(&message.data).to_string();
-                            tracing::info!("{} received: {}", self.nodes[i].name, content);
                             return Some((i, content));
                         }
                     }
@@ -223,11 +192,14 @@ impl E2eCluster {
             }
         }
     }
+
+    pub fn peer_id(&self, node_idx: usize) -> PeerId {
+        *self.nodes[node_idx].swarm.local_peer_id()
+    }
 }
 
 impl Drop for E2eCluster {
     fn drop(&mut self) {
-        // Swarms are cleaned up by their Drop impl.
         tracing::info!("E2E cluster shutting down");
     }
 }
