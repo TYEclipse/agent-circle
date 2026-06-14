@@ -555,6 +555,7 @@ pub async fn run_daemon(
                     service_discovery::handle_service_message(
                         &message.data,
                         &mut service_registry,
+                        data_dir,
                     );
                 } else {
                     match serde_json::from_slice::<serde_json::Value>(&message.data) {

@@ -80,6 +80,10 @@ enum Commands {
     #[command(subcommand)]
     Timeline(TimelineCmd),
 
+    /// 服务发现 — 搜索和列出网络服务
+    #[command(subcommand)]
+    Service(ServiceCmd),
+
     /// 插件 — Agent Plugin 管理 (S09)
     #[command(subcommand)]
     Plugin(PluginCmd),
@@ -88,6 +92,17 @@ enum Commands {
     Diag {
         #[command(subcommand)]
         cmd: DiagCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ServiceCmd {
+    /// 列出所有已发现的网络服务
+    List,
+    /// 按名称或标签搜索服务
+    Search {
+        /// 搜索关键词
+        query: String,
     },
 }
 
@@ -348,6 +363,10 @@ async fn run() -> errors::AcResult<()> {
             TimelineCmd::Post { message } => cmd_timeline_post(&message.join(" "))?,
             TimelineCmd::Show => cmd_timeline_show()?,
             TimelineCmd::Verify => cmd_timeline_verify()?,
+        },
+        Commands::Service(cmd) => match cmd {
+            ServiceCmd::List => cmd_service_list()?,
+            ServiceCmd::Search { query } => cmd_service_search(&query)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -1486,6 +1505,55 @@ fn cmd_timeline_verify() -> errors::AcResult<()> {
         }
         Err(e) => {
             eprintln!("❌ 时间线验证失败: {e}");
+        }
+    }
+    Ok(())
+}
+
+// ── Service discovery commands ────────────────────────────────────────
+// S10R103
+
+fn cmd_service_list() -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+    let services = registry.all_services();
+    if services.is_empty() {
+        println!("🔍 暂无已发现的服务 (等待 daemon 发现或手动公告)");
+    } else {
+        println!(
+            "🔍 已发现 {} 个服务 (来自 {} 个节点):",
+            services.len(),
+            registry.peer_count()
+        );
+        for (peer, svc) in &services {
+            let short_peer = &peer[..std::cmp::min(12, peer.len())];
+            print!("  {:<12}  {:20}  {:<25}", short_peer, svc.id, svc.name);
+            if let Some(ref desc) = svc.description {
+                print!("  {}", desc);
+            }
+            if !svc.tags.is_empty() {
+                print!("  [{}]", svc.tags.join(", "));
+            }
+            println!();
+        }
+    }
+    Ok(())
+}
+
+fn cmd_service_search(query: &str) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+    let results = registry.search(query);
+    if results.is_empty() {
+        println!("🔍 未找到匹配 \"{}\" 的服务", query);
+    } else {
+        println!("🔍 \"{}\" 找到 {} 个服务:", query, results.len());
+        for (peer, svc) in &results {
+            let short_peer = &peer[..std::cmp::min(12, peer.len())];
+            println!(
+                "  {:<12}  {:20}  {}  {:?}",
+                short_peer, svc.id, svc.name, svc.tags
+            );
         }
     }
     Ok(())

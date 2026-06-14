@@ -147,15 +147,84 @@ pub fn subscribe_services(
 }
 
 /// Handle an incoming GossipSub message — try to deserialize as a ServiceAnnouncement.
-pub fn handle_service_message(data: &[u8], registry: &mut ServiceRegistry) {
+/// Saves the registry to disk after a successful ingest.
+pub fn handle_service_message(
+    data: &[u8],
+    registry: &mut ServiceRegistry,
+    data_dir: &std::path::Path,
+) {
     match serde_json::from_slice::<ServiceAnnouncement>(data) {
         Ok(ann) => {
             registry.ingest(ann);
+            // Persist after each new announcement
+            let _ = save_registry(registry, data_dir);
         }
-        Err(e) => {
+        Err(_e) => {
             // Not a service announcement — could be a group chat message or other data.
             // Silently skip; the caller routes messages by topic.
-            let _ = e; // keep compiler happy
         }
     }
+}
+
+// ── Disk persistence ──────────────────────────────────────────────
+
+/// Serializable snapshot of the service registry for disk storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistrySnapshot {
+    pub entries: Vec<RegistryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryEntry {
+    pub peer_id: String,
+    pub services: Vec<ServiceInfo>,
+    pub last_seen: i64,
+}
+
+impl ServiceRegistry {
+    /// Convert to a serializable snapshot.
+    pub fn to_snapshot(&self) -> RegistrySnapshot {
+        let entries: Vec<_> = self
+            .peers
+            .iter()
+            .map(|(peer, svcs)| RegistryEntry {
+                peer_id: peer.clone(),
+                services: svcs.clone(),
+                last_seen: self.last_seen.get(peer).copied().unwrap_or(0),
+            })
+            .collect();
+        RegistrySnapshot { entries }
+    }
+
+    /// Restore from a snapshot.
+    pub fn from_snapshot(snapshot: RegistrySnapshot) -> Self {
+        let mut registry = ServiceRegistry::default();
+        for entry in snapshot.entries {
+            registry.peers.insert(entry.peer_id.clone(), entry.services);
+            registry.last_seen.insert(entry.peer_id, entry.last_seen);
+        }
+        registry
+    }
+}
+
+/// Save the service registry to a JSON file.
+pub fn save_registry(registry: &ServiceRegistry, data_dir: &std::path::Path) -> AcResult<()> {
+    let path = data_dir.join("services.json");
+    let snapshot = registry.to_snapshot();
+    let json = serde_json::to_string_pretty(&snapshot)?;
+    std::fs::write(&path, json).map_err(AcError::Io)?;
+    debug!(path = %path.display(), "服务注册表已保存");
+    Ok(())
+}
+
+/// Load the service registry from a JSON file.
+/// Returns an empty registry if the file doesn't exist.
+pub fn load_registry(data_dir: &std::path::Path) -> AcResult<ServiceRegistry> {
+    let path = data_dir.join("services.json");
+    if !path.exists() {
+        return Ok(ServiceRegistry::default());
+    }
+    let json = std::fs::read_to_string(&path).map_err(AcError::Io)?;
+    let snapshot: RegistrySnapshot = serde_json::from_str(&json).map_err(AcError::Serialization)?;
+    Ok(ServiceRegistry::from_snapshot(snapshot))
 }
