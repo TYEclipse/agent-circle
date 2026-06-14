@@ -46,4 +46,4 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 
 # Pin time to avoid rcgen blanket-impl conflict
-time = "=0.3.36"
+time = "=0.3.47"
