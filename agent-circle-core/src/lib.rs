@@ -72,4 +72,5 @@ pub mod chat;
 pub mod errors;
 pub mod identity;
 pub mod keys;
+pub mod plugin;
 pub mod protocol;
