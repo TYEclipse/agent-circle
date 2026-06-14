@@ -160,6 +160,9 @@ enum DaemonCmd {
         /// 启动时自动加入的群组（可重复指定）
         #[arg(short, long)]
         group: Vec<String>,
+        /// 启用中继模式—作为 Relay 节点为 NAT 后节点提供兜底连接
+        #[arg(long)]
+        relay: bool,
     },
     /// 查看守护进程状态
     Status,
@@ -217,7 +220,7 @@ async fn run() -> errors::AcResult<()> {
             IdentityCmd::Export => cmd_identity_export()?,
         },
         Commands::Daemon { cmd } => match cmd {
-            DaemonCmd::Start { group } => cmd_daemon_start(&group).await?,
+            DaemonCmd::Start { group, relay } => cmd_daemon_start(&group, relay).await?,
             DaemonCmd::Status => cmd_daemon_status()?,
         },
         Commands::Contact(cmd) => match cmd {
@@ -333,7 +336,7 @@ fn cmd_identity_export() -> errors::AcResult<()> {
 
 // ── Daemon commands ────────────────────────────────────────────────
 
-async fn cmd_daemon_start(groups: &[String]) -> errors::AcResult<()> {
+async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResult<()> {
     let id = match load_identity(data_dir_opt())? {
         Some(id) => id,
         None => {
@@ -365,6 +368,10 @@ async fn cmd_daemon_start(groups: &[String]) -> errors::AcResult<()> {
                 Err(e) => tracing::warn!("SIGUSR1 注册失败: {e}"),
             }
         }
+    }
+
+    if relay_mode {
+        tracing::info!("🔁 中继模式已启用 — 本节点将作为 Relay 为 NAT 后节点提供兜底连接");
     }
 
     network::run_daemon(&id, groups).await
