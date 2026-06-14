@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S11R116: `agent-circle metrics` OpenMetrics/Prometheus 指标暴露** — `agent-circle metrics` 命令输出 OpenMetrics 格式指标：daemon 状态、存储大小、联系人/时间线/服务计数、离线队列统计；15+ 指标，零依赖 Prometheus 可刮取
+- **S11R115: 统一错误码体系 `agent-circle doctor -c errors`** — 5 个错误码 (E0001–E0005)，`AcError::code()` / `code_description()`，Display 自动嵌入 code
+- **S11R113: 存储完整性检查** — `doctor storage` 增强：校验 card.json 存在性、contacts.json 加载+条目完整性、timeline.json Merkle-DAG 防篡改验证、services.json 加载
+- **S11R112: 网络拓扑诊断增强** — `doctor network` 显示 daemon 在线/离线、peer 列表 + 🟢🟡🔴 新鲜度标注
 - **S11R111: `agent-circle doctor` 全链路诊断** — 一键检查 identity/storage/network/contacts 四子系统；支持 `-c` 单选检查 + `--json` 输出
 - **S10R109: 服务市场 PoC — `agent-circle service publish`** — 本地发布服务到缓存（`service publish <ID> -n <NAME> -e <ENDPOINT> -d <DESC> -t <TAGS>`）；发布后在 `service list` 可见；daemon 模式下通过 GossipSub 自动广播
 - **S10R108: 服务离线缓存** — `ServiceRegistry.has_cached_data()`/`is_peer_fresh()` 缓存新鲜度 API；`agent-circle service cache [--stats|--flush]` CLI（缓存摘要/清除）；`cmd_service_list` 增加过期提示；daemon 离线时本地缓存仍可查询
