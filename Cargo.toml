@@ -21,7 +21,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-agent-circle-core = { path = "agent-circle-core" }
+agent-circle-core = { version = "0.1.0", path = "agent-circle-core" }
 
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
