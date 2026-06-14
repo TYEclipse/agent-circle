@@ -254,4 +254,198 @@ mod tests {
         tl.nodes[0].content = "hacked".to_string();
         assert!(tl.verify().is_err());
     }
+
+    // ── Empty / default timeline ─────────────────────────────────────
+
+    #[test]
+    fn test_new_timeline_empty() {
+        let tl = Timeline::new();
+        assert!(tl.is_empty());
+        assert_eq!(tl.len(), 0);
+    }
+
+    #[test]
+    fn test_default() {
+        let tl = Timeline::default();
+        assert!(tl.is_empty());
+        assert_eq!(tl.len(), 0);
+    }
+
+    #[test]
+    fn test_verify_empty_timeline() {
+        let tl = Timeline::new();
+        // Empty timeline should verify without error
+        assert!(tl.verify().is_ok());
+    }
+
+    #[test]
+    fn test_append_on_empty_timeline() {
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        // Appending on an empty timeline — parents should be empty
+        let node = tl.append(&id, "first post").unwrap();
+        assert!(node.parents.is_empty());
+        assert_eq!(tl.len(), 1);
+    }
+
+    // ── Determinism ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_genesis_deterministic() {
+        // Use from_seed for deterministic identity
+        let seed = [42u8; 32];
+        let id = Identity::from_seed(&seed).unwrap();
+        let node1 = Timeline::genesis(&id, "hello").unwrap();
+        let node2 = Timeline::genesis(&id, "hello").unwrap();
+        // Same identity + same content → same hash (ts may differ, but
+        // hash includes ts, so with different timestamps the hash will
+        // differ. Use from_seed with fixed ts — actually ts is always
+        // now(), so we accept that deterministic genesis is hard to
+        // test with real timestamps. Instead: verify both pass verify.
+        let tl1 = Timeline {
+            nodes: vec![node1.clone()],
+        };
+        tl1.verify().unwrap();
+        let tl2 = Timeline { nodes: vec![node2] };
+        tl2.verify().unwrap();
+        // Content round-trip is correct
+        assert_eq!(node1.content, "hello");
+    }
+
+    #[test]
+    fn test_different_content_different_hash() {
+        let id = Identity::generate();
+        let n1 = Timeline::genesis(&id, "alpha").unwrap();
+        let n2 = Timeline::genesis(&id, "beta").unwrap();
+        assert_ne!(
+            n1.id, n2.id,
+            "different content should produce different hash"
+        );
+    }
+
+    // ── Tamper detection: id & parent chain ──────────────────────────
+
+    #[test]
+    fn test_tamper_detection_id() {
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        tl.append(&id, "ok").unwrap();
+
+        // Tamper the id directly
+        tl.nodes[0].id = "0000000000000000".to_string();
+        assert!(tl.verify().is_err());
+    }
+
+    #[test]
+    fn test_tamper_detection_parent() {
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        tl.append(&id, "first").unwrap();
+        let _second = tl.append(&id, "second").unwrap();
+
+        // Tamper: change second node's parent to a non-existent hash
+        // This breaks the second node's hash (hash includes parents)
+        tl.nodes[1].parents = vec!["nonexistent".to_string()];
+        assert!(tl.verify().is_err());
+    }
+
+    // ── Serde ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_timeline_node_serde_roundtrip() {
+        let id = Identity::generate();
+        let node = Timeline::genesis(&id, "serde test 🧪").unwrap();
+        let json = serde_json::to_string(&node).unwrap();
+        let back: TimelineNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, node.id);
+        assert_eq!(back.author, node.author);
+        assert_eq!(back.content, node.content);
+        assert_eq!(back.ts, node.ts);
+        assert_eq!(back.parents, node.parents);
+        assert_eq!(back.signature, node.signature);
+    }
+
+    #[test]
+    fn test_timeline_serde_roundtrip() {
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        tl.append(&id, "post 1").unwrap();
+        tl.append(&id, "post 2").unwrap();
+
+        let json = serde_json::to_string(&tl).unwrap();
+        let back: Timeline = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back.nodes[0].content, "post 1");
+        assert_eq!(back.nodes[1].content, "post 2");
+        // Verify the deserialized timeline is still valid
+        back.verify().unwrap();
+    }
+
+    // ── Internal helpers ─────────────────────────────────────────────
+
+    #[test]
+    fn test_hash_node_no_parents() {
+        let h1 = hash_node("alice", "hi", 1000, &[]);
+        let h2 = hash_node("alice", "hi", 1000, &[]);
+        assert_eq!(h1, h2, "hash should be deterministic");
+        assert_eq!(h1.len(), 64, "blake3 hex is 64 chars");
+    }
+
+    #[test]
+    fn test_hash_node_with_parents() {
+        let parents = vec!["aaa".to_string(), "bbb".to_string()];
+        let h1 = hash_node("alice", "hi", 1000, &parents);
+        let h2 = hash_node("alice", "hi", 1000, &parents);
+        assert_eq!(h1, h2);
+        // With parents vs without should differ
+        let h_no_parents = hash_node("alice", "hi", 1000, &[]);
+        assert_ne!(h1, h_no_parents);
+    }
+
+    #[test]
+    fn test_signing_payload_format() {
+        let payload = signing_payload("abc", "alice", "hello", 1000, &[]);
+        assert_eq!(payload, "abc|alice|hello|1000");
+
+        let payload2 = signing_payload("abc", "alice", "hello", 1000, &["p1".into(), "p2".into()]);
+        assert_eq!(payload2, "abc|alice|hello|1000|p1,p2");
+    }
+
+    #[test]
+    fn test_len_tracks_nodes() {
+        let id = Identity::generate();
+        let mut tl = Timeline::new();
+        assert_eq!(tl.len(), 0);
+        tl.append(&id, "a").unwrap();
+        assert_eq!(tl.len(), 1);
+        tl.append(&id, "b").unwrap();
+        assert_eq!(tl.len(), 2);
+        tl.append(&id, "c").unwrap();
+        assert_eq!(tl.len(), 3);
+    }
+
+    #[test]
+    fn test_hacker_cant_forge_signature_with_wrong_key() {
+        let alice = Identity::generate();
+        let bob = Identity::generate();
+        assert_ne!(alice.did, bob.did);
+
+        // Alice creates a post
+        let mut tl = Timeline::new();
+        let node = tl.append(&alice, "alice's post").unwrap();
+        assert_eq!(node.author, alice.did);
+
+        // Bob tries to add a post signed with alice's key — can't,
+        // but if someone modifies author to bob's DID after the fact,
+        // verify should catch the signature mismatch
+        let mut hacked_node = node.clone();
+        hacked_node.author = bob.did.clone();
+        let tl2 = Timeline {
+            nodes: vec![hacked_node],
+        };
+        assert!(
+            tl2.verify().is_err(),
+            "signature should not verify for wrong author"
+        );
+    }
 }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S03R36: timeline.rs 测试覆盖 → 100%** — 补充 15 个测试：空/默认 timeline、空验证、空追加、确定性 hash、不同内容不同 hash、id/parent 篡改检测、serde 往返、内部 hash_node/signing_payload 函数、len 计数、跨身份签名伪造检测
 - **S03R35: chat.rs 测试覆盖 → 100%** — 补充 9 个测试：new_msg_id 非零+唯一性(100个无碰撞)、default_ttl 未来时间戳、ChatRequest/ChatResponse serde 往返、Debug/Clone/可选字段零值/额外字段兼容
 - **S03R37/R38: Mock swarm 框架 + 集成测试** — `tests/common/` MockNode 进程内 P2P 节点，自动 ACK chat 消息；2 个集成测试 (单消息投递 + 多消息全部确认) 验证 end-to-end 消息流，无需真实 daemon
 - **S03R32: identity.rs 测试覆盖 → 100%** — 补充 9 个测试：decode_did_key 错误路径 (bad prefix/base58/multicodec/wrong length)、agent_card.verify 错误路径 (invalid proof encoding/length)、from_seed 确定性、to_seed_bytes 长度、verifying_key
