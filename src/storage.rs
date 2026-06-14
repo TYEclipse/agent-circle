@@ -388,6 +388,53 @@ pub fn clear_notifications(data_dir: &Path, service_id: &str) -> AcResult<()> {
     save_notifications(&n, data_dir)
 }
 
+// ── Ratings storage (S13R137) ────────────────────────────────────
+
+use agent_circle_core::publication::Rating;
+
+fn ratings_path(data_dir: &Path, service_id: &str) -> PathBuf {
+    let safe_id = str::replace(service_id, &['/', '\\'][..], "_");
+    data_dir.join(format!("ratings-{}.json", safe_id))
+}
+
+/// Load all ratings for a service. Returns empty vec if not found.
+pub fn load_ratings(data_dir: &Path, service_id: &str) -> AcResult<Vec<Rating>> {
+    let path = ratings_path(data_dir, service_id);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let json = std::fs::read_to_string(&path)?;
+    let ratings: Vec<Rating> = serde_json::from_str(&json)?;
+    Ok(ratings)
+}
+
+/// Save ratings for a service.
+pub fn save_ratings(data_dir: &Path, service_id: &str, ratings: &[Rating]) -> AcResult<()> {
+    let path = ratings_path(data_dir, service_id);
+    let json = serde_json::to_string_pretty(ratings)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Add a rating for a service (upserts by reviewer_did).
+pub fn add_rating(data_dir: &Path, rating: &Rating) -> AcResult<()> {
+    let mut ratings = load_ratings(data_dir, &rating.service_id)?;
+    ratings.retain(|r| r.reviewer_did != rating.reviewer_did);
+    ratings.push(rating.clone());
+    save_ratings(data_dir, &rating.service_id, &ratings)
+}
+
+/// Return the aggregated rating summary for a service.
+pub fn rating_summary(
+    data_dir: &Path,
+    service_id: &str,
+) -> AcResult<agent_circle_core::publication::RatingSummary> {
+    let ratings = load_ratings(data_dir, service_id)?;
+    Ok(agent_circle_core::publication::RatingSummary::from_ratings(
+        &ratings,
+    ))
+}
+
 #[cfg(test)]
 mod publication_storage_tests {
     use super::*;

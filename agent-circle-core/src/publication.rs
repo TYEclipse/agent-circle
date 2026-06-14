@@ -185,6 +185,81 @@ pub enum ServicePermission {
     Whitelist(Vec<String>),
 }
 
+// ── Ratings & Reviews (S13R137) ──────────────────────────────────
+
+/// A subscriber's rating + optional review of a service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rating {
+    /// DID of the service being rated.
+    pub service_id: String,
+    /// DID of the reviewer (subscriber).
+    pub reviewer_did: String,
+    /// Score 1–5 (1 = worst, 5 = best).
+    pub score: u8,
+    /// Optional text review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    /// When the rating was submitted.
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Aggregated rating statistics for a service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RatingSummary {
+    /// Number of ratings received.
+    pub count: usize,
+    /// Average score (0.0 if no ratings).
+    pub average: f64,
+    /// Distribution: score_dist[0] = count of 1-star, score_dist[4] = count of 5-star.
+    pub score_dist: [usize; 5],
+}
+
+impl RatingSummary {
+    /// Compute a summary from a slice of ratings.
+    pub fn from_ratings(ratings: &[Rating]) -> Self {
+        let count = ratings.len();
+        if count == 0 {
+            return Self::default();
+        }
+        let sum: usize = ratings.iter().map(|r| r.score as usize).sum();
+        let average = sum as f64 / count as f64;
+        let mut score_dist = [0usize; 5];
+        for r in ratings {
+            if (1..=5).contains(&r.score) {
+                score_dist[(r.score - 1) as usize] += 1;
+            }
+        }
+        Self {
+            count,
+            average,
+            score_dist,
+        }
+    }
+
+    /// Render as stars: "★★★★☆ 4.2 (3 ratings)"
+    pub fn stars_display(&self) -> String {
+        if self.count == 0 {
+            return "☆☆☆☆☆  no ratings".to_string();
+        }
+        let stars: String = (1..=5)
+            .map(|i| {
+                if self.average >= i as f64 {
+                    '★'
+                } else {
+                    '☆'
+                }
+            })
+            .collect();
+        format!(
+            "{} {:.1} ({} rating{})",
+            stars,
+            self.average,
+            self.count,
+            if self.count == 1 { "" } else { "s" }
+        )
+    }
+}
+
 // ── Wire protocol types ────────────────────────────────────────────
 
 /// Request to publish content to a service.
