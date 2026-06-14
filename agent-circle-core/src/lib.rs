@@ -74,3 +74,4 @@ pub mod identity;
 pub mod keys;
 pub mod plugin;
 pub mod protocol;
+pub mod publication;
