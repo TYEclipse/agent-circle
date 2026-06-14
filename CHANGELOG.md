@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### S13 · 公众号 (Agent 服务发布) ✅
+### S15 · TUI + UX 打磨 ✅
+
+- **S15R160: S15 回顾** — `docs/S15-retrospective.md` 闭合文档：10/10 完成，总进度 80%
+- **S15R157-159: 快捷键 + 主题 + 无障碍** — Ctrl+T/C/G/Q 全局导航；F5 主题切换 (Dark/Light)；F1 无障碍模式
+- **S15R156: 通知系统** — Banner 横幅 + 终端铃声 (`\x07`)，5 帧自动消失
+- **S15R155: 群聊列表 TUI** — Mock 群组列表 + 详情面板 (GossipSub 协议)
+- **S15R154: 朋友圈 TUI** — 时间线滚动 + 时间戳 + 作者截断
+- **S15R153: 聊天窗口 TUI** — 消息气泡 + 输入栏 + 消息滚动
+- **S15R152: 联系人列表 TUI** — 双面板: 列表 + 详情，从 storage 加载
+- **S15R151: TUI 框架集成** — ratatui + crossterm，`agent-circle tui` 子命令
+
+### S14 · 测试深度加固 ✅
 
 - **S13R140: S13 回顾** — `docs/S13-retrospective.md` 闭合文档：10/10 完成，总进度 70%；发布→订阅→通知→发现→评分→浏览→权限 全链路打通
 - **S13R139: 权限模型 `service permit`**
