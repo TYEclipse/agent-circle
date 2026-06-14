@@ -155,6 +155,23 @@ enum ServiceCmd {
         #[arg(short, long)]
         flush: bool,
     },
+    /// 发布服务到本地缓存 + 市场公告 (S10R109)
+    Publish {
+        /// 服务标识符 (如 "weather-v1")
+        service_id: String,
+        /// 服务名称
+        #[arg(short, long)]
+        name: String,
+        /// 服务端点 (如 "/ac/weather/1.0.0")
+        #[arg(short, long)]
+        endpoint: String,
+        /// 服务描述
+        #[arg(short, long)]
+        description: Option<String>,
+        /// 标签 (逗号分隔)
+        #[arg(short, long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -436,6 +453,13 @@ async fn run() -> errors::AcResult<()> {
             ServiceCmd::Unsubscribe { service_spec } => cmd_service_unsubscribe(&service_spec)?,
             ServiceCmd::Subscriptions => cmd_service_subscriptions()?,
             ServiceCmd::Cache { stats, flush } => cmd_service_cache(stats, flush)?,
+            ServiceCmd::Publish {
+                service_id,
+                name,
+                endpoint,
+                description,
+                tags,
+            } => cmd_service_publish(&service_id, &name, &endpoint, description.as_deref(), &tags)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -1974,6 +1998,56 @@ fn cmd_service_cache(stats: bool, flush: bool) -> errors::AcResult<()> {
         println!("   使用 `service cache --stats` 查看详情");
         println!("   使用 `service cache --flush` 清空缓存");
     }
+    Ok(())
+}
+
+// ── Service publish command (S10R109) ─────────────────────────────
+
+fn cmd_service_publish(
+    service_id: &str,
+    name: &str,
+    endpoint: &str,
+    description: Option<&str>,
+    tags: &[String],
+) -> errors::AcResult<()> {
+    use agent_circle_core::identity::ServiceInfo;
+
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let mut registry = service_discovery::load_registry(&data_dir)?;
+
+    // Create a new ServiceInfo entry
+    let svc = ServiceInfo {
+        id: service_id.to_string(),
+        name: name.to_string(),
+        endpoint: endpoint.to_string(),
+        description: description.map(|s| s.to_string()),
+        tags: tags.to_vec(),
+        protocol_versions: vec!["1.0.0".to_string()],
+        input_schema: Some("{}".to_string()),
+    };
+
+    // Publish as a local announcement
+    let self_peer = "local".to_string();
+    let ann = service_discovery::ServiceAnnouncement {
+        peer_id: self_peer,
+        services: vec![svc],
+        ts: chrono::Utc::now().timestamp(),
+    };
+    registry.ingest(ann);
+    service_discovery::save_registry(&registry, &data_dir)?;
+
+    println!("📡 服务已发布到本地缓存:");
+    println!("   ID:      {}", service_id);
+    println!("   名称:    {}", name);
+    println!("   端点:    {}", endpoint);
+    if let Some(desc) = description {
+        println!("   描述:    {}", desc);
+    }
+    if !tags.is_empty() {
+        println!("   标签:    [{}]", tags.join(", "));
+    }
+    println!();
+    println!("💡 提示: 在 daemon 模式下，此服务将自动通过 GossipSub 广播到网络。");
     Ok(())
 }
 
