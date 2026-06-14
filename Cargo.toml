@@ -72,6 +72,7 @@ crossterm = "0.28"
 
 # Pin time to avoid rcgen blanket-impl conflict and RUSTSEC-2026-0009
 time = "=0.3.47"
+libc = "0.2.186"
 
 [dev-dependencies]
 proptest = "1"

@@ -37,6 +37,10 @@ pub struct ServiceCall {
     /// Arbitrary JSON parameters for the call.
     #[serde(default)]
     pub params: serde_json::Value,
+    /// S17R174 — Fragment metadata for large message reassembly.
+    /// Encoded as "FRAG:<msg_id>:<index>:<total>". None for non-fragmented messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fragment_info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

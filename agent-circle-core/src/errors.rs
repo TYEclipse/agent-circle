@@ -25,6 +25,10 @@ pub enum AcError {
     /// E0005 — Network / P2P transport failure (dial, listen, swarm).
     #[error("E0005: Network error — {0}")]
     Network(String),
+
+    /// E0006 — Disk space critically low; operation refused to prevent data loss.
+    #[error("E0006: Disk full — {0}")]
+    DiskFull(String),
 }
 
 impl AcError {
@@ -36,6 +40,7 @@ impl AcError {
             AcError::Serialization(_) => "E0003",
             AcError::Key(_) => "E0004",
             AcError::Network(_) => "E0005",
+            AcError::DiskFull(_) => "E0006",
         }
     }
 
@@ -47,6 +52,9 @@ impl AcError {
             "E0003" => "Serialization error — JSON or serde encode/decode failure",
             "E0004" => "Key error — cryptographic key derivation, import, or signing failure",
             "E0005" => "Network error — P2P transport, dial, listen, or swarm failure",
+            "E0006" => {
+                "Disk full — critically low disk space, operations refused to prevent data loss"
+            }
             _ => "Unknown error code",
         }
     }
