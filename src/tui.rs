@@ -9,7 +9,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
@@ -22,6 +22,17 @@ use std::io::{self, stdout};
 enum View {
     Home,
     Contacts,
+    /// Chat with the contact at the given index.
+    Chat(usize),
+}
+
+/// A chat message bubble.
+#[derive(Clone)]
+struct ChatMessage {
+    /// Message content.
+    text: String,
+    /// true = sent by me, false = received.
+    is_me: bool,
 }
 
 /// Application state for the TUI.
@@ -34,6 +45,12 @@ pub struct App {
     contact_index: usize,
     /// Loaded contacts.
     contacts: Vec<storage::Contact>,
+    /// Chat input buffer (user-typed text not yet sent).
+    input: String,
+    /// Chat messages for the current conversation.
+    messages: Vec<ChatMessage>,
+    /// Scroll offset for messages list (0 = most recent at bottom).
+    scroll_offset: usize,
     /// Whether the user has exited.
     should_quit: bool,
 }
@@ -46,13 +63,41 @@ impl App {
             view: View::Home,
             contact_index: 0,
             contacts,
+            input: String::new(),
+            messages: Vec::new(),
+            scroll_offset: 0,
             should_quit: false,
         }
     }
 
-    /// Move selection up (menu or contact list depending on view).
+    /// Open a chat view for the given contact index.
+    fn open_chat(&mut self, idx: usize) {
+        self.view = View::Chat(idx);
+        self.input.clear();
+        self.messages = Vec::new();
+        self.scroll_offset = 0;
+    }
+
+    /// Go back from chat to contacts.
+    fn close_chat(&mut self) {
+        self.view = View::Contacts;
+        self.input.clear();
+        self.messages.clear();
+    }
+
+    /// Send the current input as a message.
+    fn send_message(&mut self) {
+        let text = self.input.trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.messages.push(ChatMessage { text, is_me: true });
+        self.input.clear();
+    }
+
+    /// Move selection up (menu, contact list, or chat scroll).
     fn previous(&mut self) {
-        match self.view {
+        match &self.view {
             View::Home => {
                 if self.menu_index > 0 {
                     self.menu_index -= 1;
@@ -63,14 +108,20 @@ impl App {
                     self.contact_index -= 1;
                 }
             }
+            View::Chat(_) => {
+                // Scroll up in messages
+                if self.scroll_offset + 1 < self.messages.len() {
+                    self.scroll_offset += 1;
+                }
+            }
         }
     }
 
     /// Move selection down.
-    fn next(&mut self, max: usize) {
-        match self.view {
+    fn next(&mut self, _max: usize) {
+        match &self.view {
             View::Home => {
-                if self.menu_index + 1 < max {
+                if self.menu_index + 1 < 7 {
                     self.menu_index += 1;
                 }
             }
@@ -80,6 +131,11 @@ impl App {
                 }
                 if self.contact_index + 1 < self.contacts.len() {
                     self.contact_index += 1;
+                }
+            }
+            View::Chat(_) => {
+                if self.scroll_offset > 0 {
+                    self.scroll_offset -= 1;
                 }
             }
         }
@@ -139,7 +195,7 @@ fn run_app<B: ratatui::backend::Backend>(
             if key.kind != KeyEventKind::Press {
                 continue;
             }
-            match app.view {
+            match &app.view {
                 View::Home => match key.code {
                     KeyCode::Char('q') => {
                         app.should_quit = true;
@@ -147,18 +203,14 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Up | KeyCode::Char('k') => app.previous(),
                     KeyCode::Down | KeyCode::Char('j') => app.next(menu_items.len()),
-                    KeyCode::Enter => {
-                        // Navigate to selected view
-                        match app.menu_index {
-                            0 => {
-                                app.view = View::Contacts;
-                                app.contact_index = 0;
-                                // Refresh contacts on every entry
-                                app.contacts = load_contacts();
-                            }
-                            _ => {} // Other views not yet implemented
+                    KeyCode::Enter => match app.menu_index {
+                        0 => {
+                            app.view = View::Contacts;
+                            app.contact_index = 0;
+                            app.contacts = load_contacts();
                         }
-                    }
+                        _ => {}
+                    },
                     _ => {}
                 },
                 View::Contacts => match key.code {
@@ -170,8 +222,27 @@ fn run_app<B: ratatui::backend::Backend>(
                         app.next(app.contacts.len());
                     }
                     KeyCode::Enter => {
-                        // Placeholder: open chat with selected contact
-                        // (will be implemented in R153)
+                        if !app.contacts.is_empty() {
+                            let idx = app.contact_index;
+                            app.open_chat(idx);
+                        }
+                    }
+                    _ => {}
+                },
+                View::Chat(_) => match key.code {
+                    KeyCode::Esc => {
+                        app.close_chat();
+                    }
+                    KeyCode::Enter => {
+                        app.send_message();
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                    KeyCode::Down | KeyCode::Char('j') => app.next(0),
+                    KeyCode::Char(c) => {
+                        app.input.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.input.pop();
                     }
                     _ => {}
                 },
@@ -242,27 +313,24 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
     let menu = List::new(menu_list_items)
         .block(Block::default().borders(Borders::ALL).title(" 导航 "))
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-    let menu_selection = if app.view == View::Home {
-        Some(app.menu_index)
-    } else {
-        Some(app.menu_index)
-    };
     f.render_stateful_widget(
         menu,
         body_chunks[0],
-        &mut ListState::default().with_selected(menu_selection),
+        &mut ListState::default().with_selected(Some(app.menu_index)),
     );
 
     // Right panel — depends on current view
-    match app.view {
+    match &app.view {
         View::Home => render_home(f, body_chunks[1]),
         View::Contacts => render_contacts(f, body_chunks[1], app),
+        View::Chat(idx) => render_chat(f, body_chunks[1], app, *idx),
     }
 
     // ── Footer ──
-    let footer_hint = match app.view {
+    let footer_hint = match &app.view {
         View::Home => "j/k ↑↓ 导航  |  Enter 进入  |  q 退出",
         View::Contacts => "j/k ↑↓ 选人  |  Enter 进入聊天  |  Esc 返回",
+        View::Chat(_) => "输入消息  |  Enter 发送  |  Esc 返回",
     };
     let footer_text = vec![Line::from(Span::styled(
         format!(
@@ -278,7 +346,7 @@ fn ui(f: &mut Frame, app: &App, menu_items: &[&str]) {
     f.render_widget(footer, chunks[2]);
 }
 
-fn render_home(f: &mut Frame, area: ratatui::layout::Rect) {
+fn render_home(f: &mut Frame, area: Rect) {
     let welcome_text = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -304,7 +372,7 @@ fn render_home(f: &mut Frame, area: ratatui::layout::Rect) {
     f.render_widget(welcome, area);
 }
 
-fn render_contacts(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
+fn render_contacts(f: &mut Frame, area: Rect, app: &App) {
     if app.contacts.is_empty() {
         let empty_text = vec![
             Line::from(""),
@@ -326,13 +394,11 @@ fn render_contacts(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         return;
     }
 
-    // Split contacts area: list on left, detail on right
     let contact_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
         .split(area);
 
-    // Contact list
     let contact_items: Vec<ListItem> = app
         .contacts
         .iter()
@@ -362,7 +428,6 @@ fn render_contacts(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         &mut ListState::default().with_selected(Some(app.contact_index)),
     );
 
-    // Contact detail
     if let Some(contact) = app.contacts.get(app.contact_index) {
         let detail_text = vec![
             Line::from(""),
@@ -396,6 +461,106 @@ fn render_contacts(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     }
 }
 
+fn render_chat(f: &mut Frame, area: Rect, app: &App, contact_idx: usize) {
+    let contact = match app.contacts.get(contact_idx) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let chat_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // chat header (contact name + peer id)
+            Constraint::Min(1),    // messages area
+            Constraint::Length(3), // input bar
+        ])
+        .split(area);
+
+    // ── Chat header ──
+    let header_text = vec![
+        Line::from(Span::styled(
+            format!(" 💬 与 {} 聊天", contact.name),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("    Peer ID: {}", contact.peer_id),
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    let chat_header =
+        Paragraph::new(Text::from(header_text)).block(Block::default().borders(Borders::ALL));
+    f.render_widget(chat_header, chat_chunks[0]);
+
+    // ── Messages area ──
+    if app.messages.is_empty() {
+        let empty_msg = Paragraph::new(Line::from(Span::styled(
+            "  暂无消息 — 输入内容后按 Enter 发送",
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(Block::default().borders(Borders::ALL).title(" 消息 "))
+        .alignment(Alignment::Center);
+        f.render_widget(empty_msg, chat_chunks[1]);
+    } else {
+        // Show messages with scroll_offset (newest at bottom)
+        let msg_area = chat_chunks[1];
+        let visible_count = (msg_area.height as usize).saturating_sub(4); // borders + padding
+
+        let msgs: Vec<Line> = app
+            .messages
+            .iter()
+            .rev()
+            .skip(app.scroll_offset)
+            .take(visible_count)
+            .rev()
+            .map(|m| {
+                let prefix = if m.is_me {
+                    "  🫵 我: "
+                } else {
+                    "  🤖 对方: "
+                };
+                let style = if m.is_me {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::Cyan)
+                };
+                Line::from(Span::styled(format!("{}{}", prefix, m.text), style))
+            })
+            .collect();
+
+        let scroll_hint = if app.scroll_offset > 0 {
+            format!(" (已上滚 {} 条)", app.scroll_offset)
+        } else {
+            String::new()
+        };
+
+        let messages_widget = Paragraph::new(Text::from(msgs))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" 消息{} ", scroll_hint)),
+            )
+            .wrap(Wrap { trim: false });
+        f.render_widget(messages_widget, msg_area);
+    }
+
+    // ── Input bar ──
+    let input_text = if app.input.is_empty() {
+        Line::from(Span::styled(
+            "  输入消息...",
+            Style::default().fg(Color::DarkGray),
+        ))
+    } else {
+        Line::from(Span::styled(
+            format!("  > {}", app.input),
+            Style::default().fg(Color::White),
+        ))
+    };
+    let input_widget = Paragraph::new(Text::from(vec![input_text]))
+        .block(Block::default().borders(Borders::ALL).title(" 输入 "))
+        .wrap(Wrap { trim: false });
+    f.render_widget(input_widget, chat_chunks[2]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,6 +571,7 @@ mod tests {
         assert_eq!(app.menu_index, 0);
         assert_eq!(app.view, View::Home);
         assert!(!app.should_quit);
+        assert!(app.input.is_empty());
     }
 
     #[test]
@@ -421,12 +587,9 @@ mod tests {
         app.previous();
         assert_eq!(app.menu_index, 0);
 
-        app.next(7);
-        app.next(7);
-        app.next(7);
-        app.next(7);
-        app.next(7);
-        app.next(7);
+        for _ in 0..6 {
+            app.next(7);
+        }
         assert_eq!(app.menu_index, 6);
 
         app.next(7);
@@ -438,14 +601,87 @@ mod tests {
         let mut app = App::new();
         assert_eq!(app.view, View::Home);
 
-        // Simulate Enter on contacts (menu_index=0)
-        app.menu_index = 0;
         app.view = View::Contacts;
         assert_eq!(app.view, View::Contacts);
         assert_eq!(app.contact_index, 0);
 
-        // Go back
         app.view = View::Home;
         assert_eq!(app.view, View::Home);
+    }
+
+    #[test]
+    fn app_chat_input() {
+        let mut app = App::new();
+        app.input.push('H');
+        app.input.push('i');
+        assert_eq!(app.input, "Hi");
+
+        // Backspace
+        app.input.pop();
+        assert_eq!(app.input, "H");
+
+        // Send
+        app.input.clear();
+        app.input.push_str("Hello!");
+        app.send_message();
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].text, "Hello!");
+        assert!(app.messages[0].is_me);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn app_send_empty_message() {
+        let mut app = App::new();
+        app.send_message(); // empty input
+        assert!(app.messages.is_empty());
+
+        app.input.push_str("   ");
+        app.send_message(); // whitespace only
+        assert!(app.messages.is_empty());
+    }
+
+    #[test]
+    fn app_open_close_chat() {
+        let mut app = App::new();
+        app.open_chat(0);
+        assert_eq!(app.view, View::Chat(0));
+        assert!(app.input.is_empty());
+        assert!(app.messages.is_empty());
+
+        app.close_chat();
+        assert_eq!(app.view, View::Contacts);
+    }
+
+    #[test]
+    fn app_chat_scroll() {
+        let mut app = App::new();
+        app.view = View::Chat(0);
+        for i in 0..10 {
+            app.messages.push(ChatMessage {
+                text: format!("msg {}", i),
+                is_me: true,
+            });
+        }
+
+        // scroll_offset starts at 0
+        assert_eq!(app.scroll_offset, 0);
+
+        // scroll up
+        app.previous();
+        assert_eq!(app.scroll_offset, 1);
+
+        app.previous();
+        assert_eq!(app.scroll_offset, 2);
+
+        // scroll down
+        app.next(0);
+        assert_eq!(app.scroll_offset, 1);
+
+        // can't scroll past bounds
+        for _ in 0..20 {
+            app.previous();
+        }
+        assert_eq!(app.scroll_offset, 9); // max is len-1=9
     }
 }
