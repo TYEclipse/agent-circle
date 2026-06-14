@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### S12 · 文档 + 打包 (保障性)
 
+- **S12R123: 协议规范 `docs/protocol-spec.md`** — 10 章完整 wire format 文档：版本控制/握手身份/聊天/医生/群聊/服务发现/时间线Merkle-DAG/Kademlia DHT/安全威胁模型/未来扩展；覆盖所有 6 个协议标识符、消息格式、序列流和验证逻辑
 - **S12R122: API 文档 `docs/api/`** — 7 个模块 API 参考：index + core (identity/chat/errors/keys/protocol) + network + storage + message-queue + service-discovery + reliability/dedup/diag + observability (metrics/health/crash)；所有公开类型与函数有签名说明和代码示例
 - **S12R121: 用户手册 `docs/user-guide.md`** — 从安装到发朋友圈完整流程：安装/身份创建/守护进程/好友/私聊/群聊/朋友圈/服务发现/诊断/监控/部署/附录（11 章，~300 行）
 - **S10R109: 服务市场 PoC**
