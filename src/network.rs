@@ -139,6 +139,7 @@ pub fn send_chat(
         msg_id: crate::chat::new_msg_id(),
         ttl: crate::chat::default_ttl(),
         seq: 0, // ad-hoc send, no sequence tracking
+        service: None,
     };
     swarm.behaviour_mut().chat.send_request(&peer_id, msg)
 }
@@ -298,6 +299,7 @@ pub async fn run_daemon(
                     msg_id: sp.msg_id,
                     ttl: sp.ttl,
                     seq: sp.seq,
+                    service: None,
                 };
                 let req_id = swarm
                     .behaviour_mut()
@@ -363,6 +365,7 @@ pub async fn run_daemon(
                         msg_id: crate::chat::new_msg_id(),
                         ttl: entry.expires_at.unwrap_or(i64::MAX),
                         seq,
+                        service: None,
                     };
                     let req_id = swarm
                         .behaviour_mut()
@@ -500,6 +503,7 @@ pub async fn run_daemon(
                             msg_id: entry.msg_id,
                             ttl: entry.ttl,
                             seq: entry.seq, // keep original seq — it's the same logical message
+                            service: None,
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
                         let new_rid = request_id_to_u64(new_id);

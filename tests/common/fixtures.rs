@@ -42,6 +42,7 @@ pub fn valid_chat_request(did: &str, content: &str) -> ChatRequest {
         msg_id: 1,
         ttl: 9_999_999_999,
         seq: 1,
+        service: None,
     }
 }
 
@@ -54,6 +55,7 @@ pub fn chat_request_seq(did: &str, content: &str, seq: u64) -> ChatRequest {
         msg_id: seq, // reuse seq as msg_id for simplicity
         ttl: 9_999_999_999,
         seq,
+        service: None,
     }
 }
 
@@ -71,6 +73,7 @@ pub fn zeroed_chat_request() -> ChatRequest {
         msg_id: 0,
         ttl: 0,
         seq: 0,
+        service: None,
     }
 }
 
@@ -138,6 +141,7 @@ pub fn chat_request_from_did(did: &str) -> ChatRequest {
         msg_id: 999,
         ttl: 9_999_999_999,
         seq: 999,
+        service: None,
     }
 }
 
