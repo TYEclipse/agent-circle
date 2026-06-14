@@ -146,6 +146,15 @@ enum ServiceCmd {
     },
     /// 列出所有已订阅的服务
     Subscriptions,
+    /// 服务离线缓存 — 查看本地缓存状态/手动刷新
+    Cache {
+        /// 查看缓存摘要
+        #[arg(short, long)]
+        stats: bool,
+        /// 强制刷新缓存 (清空后重新等待公告)
+        #[arg(short, long)]
+        flush: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -426,6 +435,7 @@ async fn run() -> errors::AcResult<()> {
             } => cmd_service_subscribe(&service_spec, &label)?,
             ServiceCmd::Unsubscribe { service_spec } => cmd_service_unsubscribe(&service_spec)?,
             ServiceCmd::Subscriptions => cmd_service_subscriptions()?,
+            ServiceCmd::Cache { stats, flush } => cmd_service_cache(stats, flush)?,
         },
         Commands::Plugin(cmd) => match cmd {
             PluginCmd::List => cmd_plugin_list()?,
@@ -1875,6 +1885,94 @@ fn cmd_service_negotiate(peer_id: &str, service_id: &str) -> errors::AcResult<()
             "   agent-circle service call {} {} <METHOD> '{{\"key\":\"value\"}}'",
             peer_id, service_id
         );
+    }
+    Ok(())
+}
+
+// ── Service cache command (S10R108) ──────────────────────────────
+
+fn cmd_service_cache(stats: bool, flush: bool) -> errors::AcResult<()> {
+    let data_dir = storage::resolve_data_dir(data_dir_opt())?;
+    let registry = service_discovery::load_registry(&data_dir)?;
+
+    if flush {
+        // Remove the services.json file to force a fresh start
+        let path = data_dir.join("services.json");
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(errors::AcError::Io)?;
+            println!("🧹 服务缓存已清空。daemon 重启后将重新发现服务。");
+        } else {
+            println!("💡 缓存文件不存在，无需清空。");
+        }
+        return Ok(());
+    }
+
+    if stats {
+        let peers = registry.peer_count();
+        let services = registry.service_count();
+        let has_cache = registry.has_cached_data();
+        let freshness_secs = 600; // 10 min
+
+        println!("╔══════════════════════════════════════════════════════╗");
+        println!("║  💾 服务缓存摘要                                    ║");
+        println!("╠══════════════════════════════════════════════════════╣");
+        println!("║  缓存节点:  {:<38} ║", peers);
+        println!("║  缓存服务:  {:<38} ║", services);
+        println!(
+            "║  状态:      {:<38} ║",
+            if has_cache {
+                "🟢 有缓存数据"
+            } else {
+                "⚪ 缓存为空"
+            }
+        );
+
+        if has_cache {
+            let stale_threshold = 600; // 10 min
+            let now = chrono::Utc::now().timestamp();
+            let all_services = registry.all_services_with_meta();
+            let stale_count = all_services
+                .iter()
+                .filter(|(_, _, ts)| now - ts > stale_threshold)
+                .count();
+            let fresh_count = all_services.len() - stale_count;
+            println!(
+                "║  新鲜 ({freshness_secs}s):  {:<31} ║",
+                format!("{} 个服务", fresh_count)
+            );
+            println!(
+                "║  过期 (>{}s):  {:<33} ║",
+                stale_threshold,
+                format!("{} 个服务", stale_count)
+            );
+        }
+        println!("╠══════════════════════════════════════════════════════╣");
+        println!(
+            "║  缓存文件:  {:<38} ║",
+            data_dir.join("services.json").display().to_string()
+        );
+        println!("║  刷新命令:  agent-circle service cache --flush      ║");
+        println!("╚══════════════════════════════════════════════════════╝");
+    } else {
+        // Default: show brief status
+        let peers = registry.peer_count();
+        let services = registry.service_count();
+        println!(
+            "💾 服务缓存: {} 节点 / {} 服务  {}",
+            peers,
+            services,
+            if registry.has_cached_data() {
+                "🟢"
+            } else {
+                "⚪"
+            }
+        );
+        println!(
+            "   services.json → {}",
+            data_dir.join("services.json").display()
+        );
+        println!("   使用 `service cache --stats` 查看详情");
+        println!("   使用 `service cache --flush` 清空缓存");
     }
     Ok(())
 }
