@@ -3683,4 +3683,39 @@ mod markdown_tests {
         assert!(out.contains("  •"));
         assert!(out.contains("plain"));
     }
+
+    // ── S14R148 Edge cases ──────────────────────────────────────
+
+    #[test]
+    fn test_render_empty_string() {
+        let out = render_markdown("");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn test_render_cjk_text() {
+        let out = render_markdown("**你好世界** and *こんにちは*");
+        assert!(out.contains("\x1b[1m你好世界\x1b[0m"));
+        assert!(out.contains("\x1b[3mこんにちは\x1b[0m"));
+    }
+
+    #[test]
+    fn test_render_unclosed_formatting() {
+        let out = render_markdown("this has **unclosed bold");
+        assert!(out.contains("**unclosed bold"));
+    }
+
+    #[test]
+    fn test_render_backtick_no_code() {
+        let out = render_markdown("single ` unclosed code");
+        assert!(out.contains("` unclosed code"));
+    }
+
+    #[test]
+    fn test_render_only_stars() {
+        let out = render_markdown("*** three stars");
+        // *** should be treated as bold-start + italic-start (edge case)
+        // Just verify no panic and output is produced
+        assert!(!out.is_empty());
+    }
 }
