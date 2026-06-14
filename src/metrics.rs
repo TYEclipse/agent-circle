@@ -14,6 +14,12 @@ use std::fmt::Write;
 /// Collect all available metrics and format as OpenMetrics text.
 pub fn collect() -> AcResult<String> {
     let data_dir = storage::resolve_data_dir(None::<&std::path::PathBuf>)?;
+    collect_for_dir(&data_dir)
+}
+
+/// Same as collect() but with an explicit data directory (for daemon-side use).
+pub fn collect_for_dir(data_dir: &std::path::Path) -> AcResult<String> {
+    let pb = data_dir.to_path_buf();
     let mut out = String::new();
 
     // ── HELP/TYPE metadata ───────────────────────────────────────
@@ -25,8 +31,8 @@ pub fn collect() -> AcResult<String> {
     writeln!(out, "# agent_circle_version{{version=\"{version}\"}} 1").ok();
 
     // ── Daemon status ────────────────────────────────────────────
-    let sock = data_dir.join("control.sock");
-    let daemon_up = if sock.exists() { 1.0 } else { 0.0 };
+    let port = pb.join("control.port");
+    let daemon_up = if port.exists() { 1.0 } else { 0.0 };
 
     emit_gauge(
         &mut out,
@@ -36,8 +42,8 @@ pub fn collect() -> AcResult<String> {
     );
 
     // ── Storage ──────────────────────────────────────────────────
-    if data_dir.exists() {
-        if let Ok(size) = dir_size(&data_dir) {
+    if pb.exists() {
+        if let Ok(size) = dir_size(&pb) {
             emit_gauge(
                 &mut out,
                 "agent_circle_storage_size_bytes",
@@ -54,11 +60,7 @@ pub fn collect() -> AcResult<String> {
             ("timeline.json", "agent_circle_storage_timeline_present"),
             ("services.json", "agent_circle_storage_services_present"),
         ] {
-            let present = if data_dir.join(file).exists() {
-                1.0
-            } else {
-                0.0
-            };
+            let present = if pb.join(file).exists() { 1.0 } else { 0.0 };
             emit_gauge(
                 &mut out,
                 metric,
@@ -69,7 +71,7 @@ pub fn collect() -> AcResult<String> {
     }
 
     // ── Contacts ─────────────────────────────────────────────────
-    match storage::load_contacts(data_dir_opt()) {
+    match storage::load_contacts(Some(&pb)) {
         Ok(contacts) => {
             emit_gauge(
                 &mut out,
@@ -89,8 +91,8 @@ pub fn collect() -> AcResult<String> {
     }
 
     // ── Timeline ─────────────────────────────────────────────────
-    if data_dir.join("timeline.json").exists() {
-        match storage::load_timeline(data_dir_opt()) {
+    if pb.join("timeline.json").exists() {
+        match storage::load_timeline(Some(&pb)) {
             Ok(tl) => {
                 emit_gauge(
                     &mut out,
@@ -118,8 +120,8 @@ pub fn collect() -> AcResult<String> {
     }
 
     // ── Services ─────────────────────────────────────────────────
-    if data_dir.join("services.json").exists() {
-        match service_discovery::load_registry(&data_dir) {
+    if pb.join("services.json").exists() {
+        match service_discovery::load_registry(&pb) {
             Ok(r) => {
                 emit_gauge(
                     &mut out,
@@ -146,8 +148,8 @@ pub fn collect() -> AcResult<String> {
     }
 
     // ── Offline message queue ────────────────────────────────────
-    if data_dir.exists() {
-        if let Ok(q) = crate::message_queue::Queue::open(&data_dir) {
+    if pb.exists() {
+        if let Ok(q) = crate::message_queue::Queue::open(&pb) {
             if let Ok((pending, delivered, failed)) = q.stats() {
                 emit_gauge(
                     &mut out,
@@ -211,8 +213,4 @@ fn emit_gauge(out: &mut String, name: &str, help: &str, value: f64) {
     } else {
         let _ = writeln!(out, "{name} {value:.6}");
     }
-}
-
-fn data_dir_opt() -> Option<&'static std::path::PathBuf> {
-    crate::DATA_DIR.get()
 }
