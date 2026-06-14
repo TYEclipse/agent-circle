@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S01R13: Relay 发现协议** — relay 节点通过 DHT 广播地址（`/agent-circle/relays/0.1.0`），新节点启动后自动查询 DHT 发现并拨号 relay
 - **S01R12: Relay 中继节点实现** — `relay::Behaviour` 集成，节点可作为 Circuit Relay 为 NAT 后节点提供兜底连接
 - `daemon start --relay` CLI flag 启用以太坊中继模式
 - CI/CD pipeline (GitHub Actions)：fmt → clippy → test → build-release → deny → audit
