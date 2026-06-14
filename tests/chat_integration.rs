@@ -2,10 +2,10 @@
 
 mod common;
 
-use agent_circle::chat::ChatRequest;
 use agent_circle::identity::Identity;
 use agent_circle::network::build_swarm;
 use agent_circle::network::AgentCircleBehaviourEvent;
+use common::fixtures::{chat_request_seq, valid_chat_request};
 use common::MockNode;
 use futures::StreamExt;
 use libp2p::request_response::{self, Message};
@@ -47,14 +47,8 @@ async fn mock_node_receives_chat() {
         "connection should be established"
     );
 
-    let msg = ChatRequest {
-        from: "tester".into(),
-        content: "hello mock".into(),
-        ts: 1,
-        msg_id: 100,
-        ttl: 9999999999,
-        seq: 1,
-    };
+    // ── USE FIXTURE ──
+    let msg = valid_chat_request("tester", "hello mock");
     let req_id = swarm.behaviour_mut().chat.send_request(&node.peer_id, msg);
 
     // Wait for ACK
@@ -105,17 +99,9 @@ async fn mock_node_delivers_multiple() {
     let mut delivered = 0;
 
     for i in 1..=count {
-        let req_id = swarm.behaviour_mut().chat.send_request(
-            &node.peer_id,
-            ChatRequest {
-                from: "tester".into(),
-                content: format!("msg-{i}"),
-                ts: i as i64,
-                msg_id: i as u64,
-                ttl: 9999999999,
-                seq: i as u64,
-            },
-        );
+        // ── USE FIXTURE ──
+        let msg = chat_request_seq("tester", &format!("msg-{i}"), i as u64);
+        let req_id = swarm.behaviour_mut().chat.send_request(&node.peer_id, msg);
 
         let dl = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
