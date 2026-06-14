@@ -166,16 +166,47 @@ pub fn subscribe_services(
 
 /// Handle an incoming GossipSub message — try to deserialize as a ServiceAnnouncement.
 /// Saves the registry to disk after a successful ingest.
+/// If subscriptions are provided, checks for matching subscriptions and logs notifications.
 pub fn handle_service_message(
     data: &[u8],
     registry: &mut ServiceRegistry,
     data_dir: &std::path::Path,
+    subs: Option<&mut ServiceSubscriptions>,
 ) {
     match serde_json::from_slice::<ServiceAnnouncement>(data) {
         Ok(ann) => {
-            registry.ingest(ann);
+            registry.ingest(ann.clone());
             // Persist after each new announcement
             let _ = save_registry(registry, data_dir);
+
+            // Check subscriptions for matching services
+            if let Some(subscriptions) = subs {
+                for svc in &ann.services {
+                    if subscriptions.is_subscribed(&svc.id, Some(&ann.peer_id))
+                        || subscriptions.is_subscribed(&svc.id, None)
+                    {
+                        let versions = if svc.protocol_versions.is_empty() {
+                            "latest".to_string()
+                        } else {
+                            svc.protocol_versions.join(", ")
+                        };
+                        info!(
+                            peer_id = %ann.peer_id,
+                            service_id = %svc.id,
+                            name = %svc.name,
+                            versions = %versions,
+                            "🔔 订阅服务更新通知"
+                        );
+                        // Update last_seen_version in subscription
+                        for sub in &mut subscriptions.items {
+                            if sub.service_id == svc.id {
+                                sub.last_seen_version = versions.clone();
+                            }
+                        }
+                        let _ = save_subscriptions(subscriptions, data_dir);
+                    }
+                }
+            }
         }
         Err(_e) => {
             // Not a service announcement — could be a group chat message or other data.
@@ -245,4 +276,91 @@ pub fn load_registry(data_dir: &std::path::Path) -> AcResult<ServiceRegistry> {
     let json = std::fs::read_to_string(&path).map_err(AcError::Io)?;
     let snapshot: RegistrySnapshot = serde_json::from_str(&json).map_err(AcError::Serialization)?;
     Ok(ServiceRegistry::from_snapshot(snapshot))
+}
+
+// ── Service Subscriptions (S10R107) ────────────────────────────────
+
+/// A single subscription entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Subscription {
+    /// The service ID we're watching (e.g. "weather-v1").
+    pub service_id: String,
+    /// Optional: only watch announcements from a specific peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_id: Option<String>,
+    /// Human-readable label (e.g. "Weather Bot").
+    #[serde(default)]
+    pub label: String,
+    /// Unix timestamp when subscription was created.
+    pub created_at: i64,
+    /// The last version we've seen (used for change detection).
+    #[serde(default)]
+    pub last_seen_version: String,
+}
+
+/// Tracks user subscriptions to services.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ServiceSubscriptions {
+    pub items: Vec<Subscription>,
+}
+
+impl ServiceSubscriptions {
+    /// Add a new subscription (idempotent — skips if already exists).
+    pub fn subscribe(&mut self, service_id: &str, peer_id: Option<&str>, label: &str) {
+        let key = (service_id, peer_id);
+        if self
+            .items
+            .iter()
+            .any(|s| s.service_id == key.0 && s.peer_id.as_deref() == key.1)
+        {
+            return;
+        }
+        self.items.push(Subscription {
+            service_id: service_id.to_string(),
+            peer_id: peer_id.map(|s| s.to_string()),
+            label: label.to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            last_seen_version: String::new(),
+        });
+    }
+
+    /// Remove a subscription by service_id + optional peer_id.
+    pub fn unsubscribe(&mut self, service_id: &str, peer_id: Option<&str>) -> bool {
+        let len_before = self.items.len();
+        self.items
+            .retain(|s| !(s.service_id == service_id && s.peer_id.as_deref() == peer_id));
+        self.items.len() < len_before
+    }
+
+    /// List all active subscriptions.
+    pub fn list(&self) -> &[Subscription] {
+        &self.items
+    }
+
+    /// Check if we're subscribed to a specific service.
+    pub fn is_subscribed(&self, service_id: &str, peer_id: Option<&str>) -> bool {
+        self.items
+            .iter()
+            .any(|s| s.service_id == service_id && s.peer_id.as_deref() == peer_id)
+    }
+}
+
+/// Save subscriptions to disk.
+pub fn save_subscriptions(subs: &ServiceSubscriptions, data_dir: &std::path::Path) -> AcResult<()> {
+    let path = data_dir.join("subscriptions.json");
+    let json = serde_json::to_string_pretty(subs)?;
+    std::fs::write(&path, json).map_err(AcError::Io)?;
+    debug!(path = %path.display(), "订阅列表已保存");
+    Ok(())
+}
+
+/// Load subscriptions from disk.
+pub fn load_subscriptions(data_dir: &std::path::Path) -> AcResult<ServiceSubscriptions> {
+    let path = data_dir.join("subscriptions.json");
+    if !path.exists() {
+        return Ok(ServiceSubscriptions::default());
+    }
+    let json = std::fs::read_to_string(&path).map_err(AcError::Io)?;
+    let subs: ServiceSubscriptions = serde_json::from_str(&json).map_err(AcError::Serialization)?;
+    Ok(subs)
 }

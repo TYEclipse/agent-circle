@@ -256,6 +256,15 @@ pub async fn run_daemon(
 
     // S10R102 — Service discovery registry + periodic publication
     let mut service_registry = ServiceRegistry::default();
+    // S10R107 — Load service subscriptions
+    let mut service_subs = service_discovery::load_subscriptions(data_dir).unwrap_or_default();
+    if !service_subs.list().is_empty() {
+        info!(
+            count = service_subs.list().len(),
+            "加载了 {} 个服务订阅",
+            service_subs.list().len()
+        );
+    }
     let mut service_pub_timer = tokio::time::interval(std::time::Duration::from_secs(60));
     service_pub_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut service_prune_timer = tokio::time::interval(std::time::Duration::from_secs(300)); // 5 min
@@ -560,6 +569,7 @@ pub async fn run_daemon(
                         &message.data,
                         &mut service_registry,
                         data_dir,
+                        Some(&mut service_subs),
                     );
                 } else {
                     match serde_json::from_slice::<serde_json::Value>(&message.data) {
