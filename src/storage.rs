@@ -525,3 +525,181 @@ mod publication_storage_tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
+
+// ── S14R142 Notification / Rating / Permission storage tests ────
+
+#[cfg(test)]
+mod notification_storage_tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("ac-ntf-test-{}", rand::random::<u16>()))
+    }
+
+    #[test]
+    fn notifications_load_empty() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let n = load_notifications(&tmp).unwrap();
+        assert!(n.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn notifications_add_and_load() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        notify_subscriber(&tmp, "weather-v1", "pub-123").unwrap();
+        notify_subscriber(&tmp, "weather-v1", "pub-456").unwrap();
+        notify_subscriber(&tmp, "news-v1", "pub-789").unwrap();
+
+        let n = load_notifications(&tmp).unwrap();
+        assert_eq!(n.get("weather-v1").unwrap().len(), 2);
+        assert_eq!(n.get("news-v1").unwrap().len(), 1);
+        assert_eq!(n.get("weather-v1").unwrap()[0], "pub-123");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn notifications_clear() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        notify_subscriber(&tmp, "svc", "id1").unwrap();
+        notify_subscriber(&tmp, "svc", "id2").unwrap();
+        notify_subscriber(&tmp, "other", "id3").unwrap();
+
+        clear_notifications(&tmp, "svc").unwrap();
+        let n = load_notifications(&tmp).unwrap();
+        assert!(n.get("svc").is_none());
+        assert_eq!(n.get("other").unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod rating_storage_tests {
+    use super::*;
+    use agent_circle_core::publication::Rating;
+    use chrono::Utc;
+
+    fn temp_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("ac-rat-test-{}", rand::random::<u16>()))
+    }
+
+    fn sample_rating(svc: &str, reviewer: &str, score: u8) -> Rating {
+        Rating {
+            service_id: svc.into(),
+            reviewer_did: reviewer.into(),
+            score,
+            comment: None,
+            timestamp: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn ratings_load_empty() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let ratings = load_ratings(&tmp, "nonexistent").unwrap();
+        assert!(ratings.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn ratings_add_and_load() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let r1 = sample_rating("svc-1", "did:a", 5);
+        let r2 = sample_rating("svc-1", "did:b", 3);
+
+        add_rating(&tmp, &r1).unwrap();
+        add_rating(&tmp, &r2).unwrap();
+
+        let ratings = load_ratings(&tmp, "svc-1").unwrap();
+        assert_eq!(ratings.len(), 2);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn ratings_upsert_same_reviewer() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let r1 = sample_rating("svc-1", "did:a", 3);
+        let r2 = sample_rating("svc-1", "did:a", 5);
+
+        add_rating(&tmp, &r1).unwrap();
+        add_rating(&tmp, &r2).unwrap();
+
+        let ratings = load_ratings(&tmp, "svc-1").unwrap();
+        assert_eq!(ratings.len(), 1);
+        assert_eq!(ratings[0].score, 5);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn rating_summary_from_storage() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        add_rating(&tmp, &sample_rating("svc", "did:a", 4)).unwrap();
+        add_rating(&tmp, &sample_rating("svc", "did:b", 2)).unwrap();
+
+        let summary = rating_summary(&tmp, "svc").unwrap();
+        assert_eq!(summary.count, 2);
+        assert!((summary.average - 3.0).abs() < 0.01);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod permission_storage_tests {
+    use super::*;
+    use agent_circle_core::publication::ServicePermission;
+
+    fn temp_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("ac-perm-test-{}", rand::random::<u16>()))
+    }
+
+    #[test]
+    fn permission_default_is_public() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let perm = load_permission(&tmp, "nonexistent").unwrap();
+        assert_eq!(perm, ServicePermission::Public);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn permission_save_and_load() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let perm = ServicePermission::ApprovalRequired;
+        save_permission(&tmp, "svc-1", &perm).unwrap();
+        let loaded = load_permission(&tmp, "svc-1").unwrap();
+        assert_eq!(loaded, ServicePermission::ApprovalRequired);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn permission_whitelist() {
+        let tmp = temp_dir();
+        let _ = std::fs::create_dir_all(&tmp);
+        let perm = ServicePermission::Whitelist(vec!["did:a".into()]);
+        save_permission(&tmp, "svc-1", &perm).unwrap();
+        let loaded = load_permission(&tmp, "svc-1").unwrap();
+        assert_eq!(loaded, ServicePermission::Whitelist(vec!["did:a".into()]));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn permission_display_labels() {
+        assert_eq!(permission_display(&ServicePermission::Public), "🔓 公开");
+        assert_eq!(
+            permission_display(&ServicePermission::ApprovalRequired),
+            "🔐 需审批"
+        );
+        assert_eq!(
+            permission_display(&ServicePermission::Whitelist(vec![])),
+            "🔒 白名单"
+        );
+    }
+}

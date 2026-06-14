@@ -417,4 +417,94 @@ mod tests {
         assert_eq!(decoded.content_type, ContentType::Markdown);
         assert_eq!(decoded.version, 1);
     }
+
+    // ── S14R142 Rating tests ─────────────────────────────────────
+
+    fn sample_rating(service_id: &str, reviewer: &str, score: u8) -> Rating {
+        Rating {
+            service_id: service_id.into(),
+            reviewer_did: reviewer.into(),
+            score,
+            comment: None,
+            timestamp: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_rating_summary_empty() {
+        let summary = RatingSummary::from_ratings(&[]);
+        assert_eq!(summary.count, 0);
+        assert_eq!(summary.average, 0.0);
+        assert_eq!(summary.score_dist, [0, 0, 0, 0, 0]);
+        assert!(summary.stars_display().contains("no ratings"));
+    }
+
+    #[test]
+    fn test_rating_summary_single() {
+        let ratings = [sample_rating("svc-1", "did:a", 4)];
+        let summary = RatingSummary::from_ratings(&ratings);
+        assert_eq!(summary.count, 1);
+        assert!((summary.average - 4.0).abs() < 0.01);
+        assert_eq!(summary.score_dist, [0, 0, 0, 1, 0]);
+    }
+
+    #[test]
+    fn test_rating_summary_multiple() {
+        let ratings = [
+            sample_rating("svc-1", "did:a", 5),
+            sample_rating("svc-1", "did:b", 3),
+            sample_rating("svc-1", "did:c", 5),
+            sample_rating("svc-1", "did:d", 4),
+        ];
+        let summary = RatingSummary::from_ratings(&ratings);
+        assert_eq!(summary.count, 4);
+        assert!((summary.average - 4.25).abs() < 0.01);
+        assert_eq!(summary.score_dist, [0, 0, 1, 1, 2]);
+    }
+
+    #[test]
+    fn test_rating_stars_display() {
+        let ratings = [
+            sample_rating("svc", "did:a", 5),
+            sample_rating("svc", "did:b", 4),
+        ];
+        let summary = RatingSummary::from_ratings(&ratings);
+        let display = summary.stars_display();
+        assert!(display.contains("★★★★"));
+        assert!(display.contains("4.5"));
+        assert!(display.contains("2 ratings"));
+    }
+
+    #[test]
+    fn test_rating_serde_roundtrip() {
+        let rating = Rating {
+            service_id: "did:key:svc".into(),
+            reviewer_did: "did:key:alice".into(),
+            score: 4,
+            comment: Some("Great service!".into()),
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&rating).unwrap();
+        let decoded: Rating = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.service_id, "did:key:svc");
+        assert_eq!(decoded.score, 4);
+        assert_eq!(decoded.comment.as_deref(), Some("Great service!"));
+    }
+
+    #[test]
+    fn test_service_permission_serde() {
+        let perm = ServicePermission::Whitelist(vec!["did:a".into(), "did:b".into()]);
+        let json = serde_json::to_string(&perm).unwrap();
+        let decoded: ServicePermission = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded,
+            ServicePermission::Whitelist(vec!["did:a".into(), "did:b".into()])
+        );
+    }
+
+    #[test]
+    fn test_service_permission_default_is_public() {
+        let perm: ServicePermission = serde_json::from_str("\"public\"").unwrap();
+        assert_eq!(perm, ServicePermission::Public);
+    }
 }
