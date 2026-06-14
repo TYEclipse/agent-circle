@@ -99,6 +99,12 @@ enum ChatCmd {
         peer_id: String,
         /// 消息内容
         message: Vec<String>,
+        /// 追踪投递状态 — 等待 ACK 或超时后打印结果
+        #[arg(long)]
+        track: bool,
+        /// 追踪超时秒数 (默认 30s)
+        #[arg(long, default_value = "30")]
+        timeout: u64,
     },
 }
 
@@ -249,8 +255,17 @@ async fn run() -> errors::AcResult<()> {
             ContactCmd::List => cmd_contact_list()?,
         },
         Commands::Chat { cmd } => match cmd {
-            ChatCmd::Send { peer_id, message } => {
-                cmd_chat_send(&peer_id, &message.join(" ")).await?
+            ChatCmd::Send {
+                peer_id,
+                message,
+                track,
+                timeout,
+            } => {
+                if track {
+                    cmd_chat_send_track(&peer_id, &message.join(" "), timeout).await?
+                } else {
+                    cmd_chat_send(&peer_id, &message.join(" ")).await?
+                }
             }
         },
         Commands::Group(cmd) => match cmd {
@@ -473,6 +488,100 @@ async fn cmd_chat_send(peer_id_str: &str, message: &str) -> errors::AcResult<()>
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     Ok(())
+}
+
+async fn cmd_chat_send_track(
+    peer_id_str: &str,
+    message: &str,
+    timeout_secs: u64,
+) -> errors::AcResult<()> {
+    use libp2p::request_response::{self, Message};
+    use libp2p::swarm::SwarmEvent;
+    use libp2p::PeerId;
+    use std::str::FromStr;
+    use std::time::Instant;
+
+    let peer_id = PeerId::from_str(peer_id_str)
+        .map_err(|e| errors::AcError::Network(format!("无效 PeerId: {e}")))?;
+
+    let id = match storage::load_identity(data_dir_opt())? {
+        Some(id) => id,
+        None => {
+            eprintln!("⚠️  未找到身份，请先创建。");
+            std::process::exit(1);
+        }
+    };
+
+    let mut swarm = network::build_swarm(&id)?;
+    let my_did = id.did.clone();
+
+    // ── Connect ──────────────────────────────────────────────────
+    println!("📡 正在发现并连接 {peer_id}...");
+    for _ in 0..5 {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::select! {
+            _ = swarm.select_next_some() => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+        if swarm.is_connected(&peer_id) {
+            break;
+        }
+    }
+    swarm
+        .dial(peer_id)
+        .map_err(|e| errors::AcError::Network(format!("dial 失败: {e}")))?;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // ── Send & track ─────────────────────────────────────────────
+    let request_id = network::send_chat(&mut swarm, peer_id, &my_did, message);
+    let sent_at = Instant::now();
+    println!("💬 已发送 → {peer_id}: {message}");
+    println!("⏳ 等待送达确认 (超时: {timeout_secs}s)...");
+
+    let deadline = Instant::now() + std::time::Duration::from_secs(timeout_secs);
+
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            println!("⏰ 待确认 ({}s 内未收到 ACK)", timeout_secs);
+            return Ok(());
+        }
+
+        let remaining = deadline - now;
+        tokio::select! {
+            event = swarm.select_next_some() => {
+                match event {
+                    // ACK received → delivered!
+                    SwarmEvent::Behaviour(network::AgentCircleBehaviourEvent::Chat(
+                        request_response::Event::Message {
+                            message: Message::Response { request_id: rid, .. },
+                            ..
+                        }
+                    )) if rid == request_id => {
+                        let elapsed = sent_at.elapsed();
+                        println!("✅ 已送达 → {peer_id} ({:.0}ms)", elapsed.as_secs_f64() * 1000.0);
+                        return Ok(());
+                    }
+                    // Outbound failure → report
+                    SwarmEvent::Behaviour(network::AgentCircleBehaviourEvent::Chat(
+                        request_response::Event::OutboundFailure {
+                            request_id: rid,
+                            error,
+                            ..
+                        }
+                    )) if rid == request_id => {
+                        println!("❌ 发送失败 → {peer_id}: {error:?}");
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            _ = tokio::time::sleep(remaining) => {
+                println!("⏰ 待确认 ({}s 内未收到 ACK)", timeout_secs);
+                return Ok(());
+            }
+        }
+    }
 }
 
 // ── Contact commands ───────────────────────────────────────────────

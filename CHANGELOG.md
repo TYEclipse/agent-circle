@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **S02R24: 投递状态回调** — `chat send --track` 发送后等待 ACK/Failure 实时打印投递状态（✅ Delivered / ❌ Failed / ⏰ Pending）；`--timeout` 自定义超时（默认 30s）；`send_chat()` 现在返回 `OutboundRequestId`
 - **S02R22: 消息序列号 + 顺序保证** — `ChatRequest.seq` 发送端单调递增，`SequenceTracker` 接收端按序缓冲乱序消息，gap 填满后自动冲刷投递；断线重连时重置 per-peer 状态；新增 6 个单元测试
 - **S02R19: 崩溃恢复 — PendingTracker SQLite 持久化** — `pending` 表记录所有飞行中消息，daemon 被 kill -9 后重启自动恢复未 ACK 消息并重新发送；Queue 统一打开一次复用；expire_pending() 定期清理过期 pending 条目；新增 6 个单元测试
 - **S02R18: 消息 TTL 与过期清理** — `ChatRequest.ttl`（默认 7 天），离线队列 `expire_before()` 自动清理过期消息；daemon 每 5 分钟自动 `prune_delivered()` + `expire_before()`；`agent-circle diag clean` CLI 手动清理
