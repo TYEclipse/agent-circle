@@ -438,3 +438,243 @@ pub fn handle_publication_message(
         }
     }
 }
+
+// ── S14R144 Unit Tests ──────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::ServiceInfo;
+
+    fn make_service(id: &str, name: &str, tags: Vec<&str>) -> ServiceInfo {
+        ServiceInfo {
+            id: id.into(),
+            name: name.into(),
+            endpoint: format!("/ac/{id}/1.0.0"),
+            description: Some(format!("{name} description")),
+            tags: tags.into_iter().map(|s| s.into()).collect(),
+            protocol_versions: vec!["1.0.0".into()],
+            input_schema: Some("{}".into()),
+        }
+    }
+
+    fn make_announcement(peer: &str, services: Vec<ServiceInfo>) -> ServiceAnnouncement {
+        ServiceAnnouncement {
+            peer_id: peer.into(),
+            services,
+            ts: 1700000000,
+        }
+    }
+
+    #[test]
+    fn test_registry_ingest_and_count() {
+        let mut reg = ServiceRegistry::default();
+        assert_eq!(reg.peer_count(), 0);
+        assert_eq!(reg.service_count(), 0);
+
+        reg.ingest(make_announcement(
+            "peer-a",
+            vec![make_service("svc-1", "Weather", vec!["api"])],
+        ));
+        assert_eq!(reg.peer_count(), 1);
+        assert_eq!(reg.service_count(), 1);
+
+        reg.ingest(make_announcement(
+            "peer-b",
+            vec![
+                make_service("svc-2", "News", vec!["rss"]),
+                make_service("svc-3", "Crypto", vec!["finance"]),
+            ],
+        ));
+        assert_eq!(reg.peer_count(), 2);
+        assert_eq!(reg.service_count(), 3);
+
+        // Re-ingest same peer overwrites
+        reg.ingest(make_announcement(
+            "peer-a",
+            vec![make_service("svc-4", "Stocks", vec!["finance"])],
+        ));
+        assert_eq!(reg.peer_count(), 2);
+        assert_eq!(reg.service_count(), 3);
+    }
+
+    #[test]
+    fn test_registry_get() {
+        let mut reg = ServiceRegistry::default();
+        let svc = make_service("svc-1", "Weather", vec![]);
+        reg.ingest(make_announcement("peer-a", vec![svc.clone()]));
+
+        let found = reg.get("peer-a").unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "svc-1");
+        assert!(reg.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_registry_all_services() {
+        let mut reg = ServiceRegistry::default();
+        reg.ingest(make_announcement(
+            "peer-a",
+            vec![make_service("s1", "A", vec![])],
+        ));
+        reg.ingest(make_announcement(
+            "peer-b",
+            vec![make_service("s2", "B", vec![])],
+        ));
+
+        let all = reg.all_services();
+        assert_eq!(all.len(), 2);
+        let ids: Vec<&str> = all.iter().map(|(_, s)| s.id.as_str()).collect();
+        assert!(ids.contains(&"s1"));
+        assert!(ids.contains(&"s2"));
+    }
+
+    #[test]
+    fn test_registry_search() {
+        let mut reg = ServiceRegistry::default();
+        reg.ingest(make_announcement(
+            "p1",
+            vec![make_service(
+                "weather-v1",
+                "Weather Bot",
+                vec!["api", "weather"],
+            )],
+        ));
+        reg.ingest(make_announcement(
+            "p2",
+            vec![make_service("news-v1", "News Feed", vec!["rss", "news"])],
+        ));
+        reg.ingest(make_announcement(
+            "p3",
+            vec![make_service(
+                "crypto-v1",
+                "Crypto Prices",
+                vec!["finance", "crypto"],
+            )],
+        ));
+
+        // Search by name
+        let results = reg.search("weather");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.name, "Weather Bot");
+
+        // Search by tag
+        let results = reg.search("finance");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.id, "crypto-v1");
+
+        // Search by id
+        let results = reg.search("news");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.id, "news-v1");
+
+        // No match
+        assert!(reg.search("zzz_nonexistent").is_empty());
+    }
+
+    #[test]
+    fn test_registry_last_seen() {
+        let mut reg = ServiceRegistry::default();
+        reg.ingest(make_announcement("peer-a", vec![]));
+        assert_eq!(reg.last_seen_for("peer-a"), Some(1700000000));
+        assert!(reg.last_seen_for("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_registry_snapshot_roundtrip() {
+        let mut reg = ServiceRegistry::default();
+        reg.ingest(make_announcement(
+            "peer-a",
+            vec![make_service("svc-1", "Svc", vec![])],
+        ));
+
+        let snap = reg.to_snapshot();
+        let restored = ServiceRegistry::from_snapshot(snap);
+        assert_eq!(restored.peer_count(), 1);
+        assert_eq!(restored.service_count(), 1);
+        assert_eq!(restored.get("peer-a").unwrap()[0].id, "svc-1");
+    }
+
+    #[test]
+    fn test_subscriptions_add_remove() {
+        let mut subs = ServiceSubscriptions::default();
+        assert!(subs.list().is_empty());
+
+        subs.subscribe("svc-1", Some("peer-a"), "label");
+        assert_eq!(subs.list().len(), 1);
+
+        // Duplicate ignored
+        subs.subscribe("svc-1", Some("peer-a"), "label2");
+        assert_eq!(subs.list().len(), 1);
+
+        // Different peer = different subscription
+        subs.subscribe("svc-1", Some("peer-b"), "");
+        assert_eq!(subs.list().len(), 2);
+
+        assert!(subs.is_subscribed("svc-1", Some("peer-a")));
+        assert!(!subs.is_subscribed("svc-x", None));
+
+        assert!(subs.unsubscribe("svc-1", Some("peer-a")));
+        assert_eq!(subs.list().len(), 1);
+        assert!(!subs.unsubscribe("svc-1", Some("peer-a"))); // already removed
+    }
+
+    #[test]
+    fn test_service_announcement_serde() {
+        let ann = make_announcement(
+            "peer-a",
+            vec![make_service("svc-1", "Weather", vec!["api"])],
+        );
+        let json = serde_json::to_string(&ann).unwrap();
+        let decoded: ServiceAnnouncement = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.peer_id, "peer-a");
+        assert_eq!(decoded.services.len(), 1);
+        assert_eq!(decoded.services[0].id, "svc-1");
+    }
+
+    #[test]
+    fn test_registry_save_load_disk() {
+        let tmp = std::env::temp_dir().join(format!("ac-sd-test-{}", rand::random::<u16>()));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let mut reg = ServiceRegistry::default();
+        reg.ingest(make_announcement(
+            "peer-a",
+            vec![make_service("svc-1", "Weather", vec![])],
+        ));
+        save_registry(&reg, &tmp).unwrap();
+
+        let loaded = load_registry(&tmp).unwrap();
+        assert_eq!(loaded.peer_count(), 1);
+        assert_eq!(loaded.get("peer-a").unwrap()[0].id, "svc-1");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_registry_load_nonexistent_file() {
+        let tmp = std::env::temp_dir().join(format!("ac-sd-empty-{}", rand::random::<u16>()));
+        let _ = std::fs::create_dir_all(&tmp);
+        let reg = load_registry(&tmp).unwrap();
+        assert_eq!(reg.peer_count(), 0);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_subscriptions_save_load_disk() {
+        let tmp = std::env::temp_dir().join(format!("ac-sub-test-{}", rand::random::<u16>()));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let mut subs = ServiceSubscriptions::default();
+        subs.subscribe("svc-1", Some("peer-a"), "Weather");
+        subs.subscribe("svc-2", None, "News");
+        save_subscriptions(&subs, &tmp).unwrap();
+
+        let loaded = load_subscriptions(&tmp).unwrap();
+        assert_eq!(loaded.list().len(), 2);
+        assert!(loaded.is_subscribed("svc-1", Some("peer-a")));
+        assert!(loaded.is_subscribed("svc-2", None));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
