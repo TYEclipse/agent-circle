@@ -285,7 +285,7 @@
 | 轮 | 任务 | 验收 |
 |---|---|---|
 | 131 | "公众号" 数据模型 | ✅ 10 类型 — Publication · History · Subscriber · Permission · Wire |
-| 132 | 服务发布（`agent-circle service publish`） | 发布新版本 → 订阅者收到通知 |
+| 132 | 服务发布（`agent-circle service post`） | ✅ post + history CLI — Ed25519 签名 + 持久化 |
 | 133 | 服务订阅（`agent-circle service subscribe`） | 订阅 → 新版本推送 |
 | 134 | 服务发现（`agent-circle service discover`） | DHT 上发现公共服务 |
 | 135 | 推送消息（服务 → 订阅者广播） | 公众号推送 → 所有订阅者收到 |
