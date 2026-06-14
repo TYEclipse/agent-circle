@@ -6,9 +6,7 @@
 //! at startup, loads each `.so`/`.dylib`/`.dll`, and drives the
 //! lifecycle hooks.
 
-use crate::plugin::{
-    AgentPlugin, PluginId, PluginManifest, PluginMessage, PluginResult,
-};
+use crate::plugin::{AgentPlugin, PluginId, PluginManifest, PluginResult};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{error, info, warn};
@@ -120,6 +118,7 @@ impl PluginRegistry {
     }
 
     /// Call `on_stop` on all loaded plugins.
+    #[allow(dead_code)] // wired in daemon loop (future)
     pub fn stop_all(&mut self) {
         for lp in self.plugins.values_mut() {
             let id = lp.plugin.manifest().id.clone();
@@ -131,11 +130,8 @@ impl PluginRegistry {
 
     /// Route a chat message to all plugins.  Returns `true` if any
     /// plugin consumed the message.
-    pub fn route_message(
-        &mut self,
-        peer_id: &str,
-        content: &str,
-    ) -> PluginResult<bool> {
+    #[allow(dead_code)] // wired in daemon loop (future)
+    pub fn route_message(&mut self, peer_id: &str, content: &str) -> PluginResult<bool> {
         let msg = crate::plugin::PluginMessage {
             peer_id: peer_id.to_string(),
             content: content.to_string(),
