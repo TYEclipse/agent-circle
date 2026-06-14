@@ -18,6 +18,9 @@ pub struct ChatRequest {
     /// Unix timestamp (seconds) when this message expires.
     /// After this time the message should not be retried or stored.
     pub ttl: i64,
+    /// Monotonic sequence number per sender, used for ordering.
+    /// Resets on daemon restart; receiver resets on connection establish.
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

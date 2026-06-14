@@ -13,6 +13,7 @@ use crate::errors::{AcError, AcResult};
 use crate::identity::Identity;
 use crate::message_queue::Queue;
 use crate::reliability::{PendingTracker, MAX_RETRIES};
+use crate::sequence::SequenceTracker;
 use futures::StreamExt;
 use libp2p::{
     dcutr, gossipsub, identify, kad,
@@ -24,6 +25,7 @@ use libp2p::{
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::Ipv4Addr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
@@ -126,6 +128,7 @@ pub fn send_chat(
         ts: chrono::Utc::now().timestamp(),
         msg_id: crate::chat::new_msg_id(),
         ttl: crate::chat::default_ttl(),
+        seq: 0, // ad-hoc send, no sequence tracking
     };
     swarm.behaviour_mut().chat.send_request(&peer_id, msg);
 }
@@ -229,7 +232,9 @@ pub async fn run_daemon(
     let mut relay_registered_or_discovered = false;
     let mut pending = PendingTracker::new();
     let mut dedup = DedupFilter::new();
+    let mut sequence = SequenceTracker::new();
     let counters = DiagCounters::default();
+    let seq_counter = AtomicU64::new(1); // start at 1; 0 = unset/ad-hoc
     let started = std::time::Instant::now();
     let mut stats_timer = tokio::time::interval(std::time::Duration::from_secs(30));
     stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -266,6 +271,7 @@ pub async fn run_daemon(
                     ts: sp.ts,
                     msg_id: sp.msg_id,
                     ttl: sp.ttl,
+                    seq: sp.seq,
                 };
                 let req_id = swarm
                     .behaviour_mut()
@@ -280,6 +286,7 @@ pub async fn run_daemon(
                     sp.ts,
                     sp.msg_id,
                     sp.ttl,
+                    sp.seq,
                     sp.retries,
                 ) {
                     warn!(error = %e, "崩溃恢复持久化失败");
@@ -292,6 +299,7 @@ pub async fn run_daemon(
                         sp.ts,
                         sp.msg_id,
                         sp.ttl,
+                        sp.seq,
                     );
                     counters.inc_sent();
                     info!(peer = %sp.peer, msg_id = sp.msg_id, "♻️ 已恢复发送");
@@ -314,10 +322,13 @@ pub async fn run_daemon(
                 ..
             } => {
                 info!(peer_id = %peer_id, connections = num_established, "已连接");
+                // Reset sequence tracking for this peer (their seq counter may have restarted)
+                sequence.reset_peer(&peer_id);
                 // Flush offline queue for this peer
                 let peer_str = peer_id.to_string();
                 let pending_msgs = queue.pending_for(&peer_str).unwrap_or_default();
                 for entry in pending_msgs {
+                    let seq = seq_counter.fetch_add(1, Ordering::Relaxed);
                     info!(peer = %peer_str, msg = %entry.content, "📤 重试离线消息");
                     let chat_req = ChatRequest {
                         from: id.short_code.clone(),
@@ -325,6 +336,7 @@ pub async fn run_daemon(
                         ts: chrono::Utc::now().timestamp(),
                         msg_id: crate::chat::new_msg_id(),
                         ttl: entry.expires_at.unwrap_or(i64::MAX),
+                        seq,
                     };
                     let req_id = swarm
                         .behaviour_mut()
@@ -338,6 +350,7 @@ pub async fn run_daemon(
                         chat_req.ts,
                         chat_req.msg_id,
                         chat_req.ttl,
+                        seq,
                     );
                     // Persist to survive crashes
                     let rid_u64 = request_id_to_u64(req_id);
@@ -349,6 +362,7 @@ pub async fn run_daemon(
                         chat_req.ts,
                         chat_req.msg_id,
                         chat_req.ttl,
+                        seq,
                         0,
                     ) {
                         warn!(error = %e, "持久化track失败");
@@ -387,7 +401,7 @@ pub async fn run_daemon(
             // ── Chat: incoming 1-to-1 message ──────────────────────
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(
                 request_response::Event::Message {
-                    peer: _,
+                    peer,
                     message:
                         Message::Request {
                             request, channel, ..
@@ -395,13 +409,17 @@ pub async fn run_daemon(
                     ..
                 },
             )) => {
-                if dedup.is_dup(request.msg_id) {
-                    debug!(msg_id = request.msg_id, "🔄 重复消息，已跳过");
-                    counters.inc_duplicate();
-                } else {
-                    info!(from = %request.from, msg_id = request.msg_id, content = %request.content, "收到私聊");
+                // Run through sequence tracker for ordering
+                let ordered = sequence.ingest(&peer, request.clone());
+                for msg in &ordered {
+                    if dedup.is_dup(msg.msg_id) {
+                        debug!(msg_id = msg.msg_id, "🔄 重复消息，已跳过");
+                        counters.inc_duplicate();
+                    } else {
+                        info!(from = %msg.from, seq = msg.seq, msg_id = msg.msg_id, content = %msg.content, "收到私聊");
+                    }
                 }
-                // Always ACK — even for duplicates — so sender knows it arrived
+                // Always ACK — even for duplicates or buffered — so sender knows we received it
                 let _ = swarm
                     .behaviour_mut()
                     .chat
@@ -455,6 +473,7 @@ pub async fn run_daemon(
                             ts: chrono::Utc::now().timestamp(),
                             msg_id: entry.msg_id,
                             ttl: entry.ttl,
+                            seq: entry.seq, // keep original seq — it's the same logical message
                         };
                         let new_id = swarm.behaviour_mut().chat.send_request(&peer, chat_req);
                         let new_rid = request_id_to_u64(new_id);
@@ -468,6 +487,7 @@ pub async fn run_daemon(
                             entry.ts,
                             entry.msg_id,
                             entry.ttl,
+                            entry.seq,
                             entry.retries,
                         ) {
                             warn!(error = %e, "重试持久化失败");

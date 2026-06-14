@@ -10,6 +10,7 @@ mod identity;
 mod message_queue;
 mod network;
 mod reliability;
+mod sequence;
 mod storage;
 mod timeline;
 
