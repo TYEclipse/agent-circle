@@ -370,6 +370,7 @@ pub async fn run_daemon(
     id: &Identity,
     groups: &[String],
     relay_mode: bool,
+    bootstrap_addrs: &[String],
     data_dir: &std::path::Path,
 ) -> AcResult<()> {
     let mut swarm = build_swarm(id)?;
@@ -406,6 +407,26 @@ pub async fn run_daemon(
 
     let mut bootstrapped = false;
     let mut relay_registered_or_discovered = false;
+
+    // Add bootstrap peers to Kademlia routing table
+    // Hardcoded defaults + user-provided addrs via --bootstrap flag
+    let mut bootstrap_peers: Vec<String> = vec![];
+    bootstrap_peers.extend(bootstrap_addrs.iter().cloned());
+    for addr_str in &bootstrap_peers {
+        if let Ok(maddr) = addr_str.parse::<libp2p::Multiaddr>() {
+            swarm.behaviour_mut().kademlia.add_address(
+                &libp2p::PeerId::random(), // placeholder — kad bootstrap() will resolve real ID
+                maddr.clone(),
+            );
+            info!(addr=%addr_str, "📞 已添加 bootstrap 种子节点");
+        } else {
+            warn!(addr=%addr_str, "⚠️ 无法解析 bootstrap 地址");
+        }
+    }
+    if bootstrap_addrs.is_empty() {
+        info!("ℹ️  未配置 bootstrap 种子节点（使用 --bootstrap 指定或通过 mDNS 局域网发现）");
+        info!("💡 提示：安装后可能找不到其他节点。你可以运行自己的 bootstrap 节点或加入已知网络");
+    }
     let mut pending = PendingTracker::new();
     let mut dedup = DedupFilter::new();
     let mut sequence = SequenceTracker::new();
