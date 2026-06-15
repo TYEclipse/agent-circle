@@ -411,6 +411,9 @@ enum DaemonCmd {
         /// 启用中继模式—作为 Relay 节点为 NAT 后节点提供兜底连接
         #[arg(long)]
         relay: bool,
+        /// 添加 bootstrap 种子节点（可重复指定 multiaddr）
+        #[arg(long, value_delimiter = ',')]
+        bootstrap: Vec<String>,
     },
     /// 查看守护进程状态
     Status,
@@ -485,7 +488,11 @@ async fn run() -> errors::AcResult<()> {
             IdentityCmd::Mnemonic => cmd_identity_mnemonic()?,
         },
         Commands::Daemon { cmd } => match cmd {
-            DaemonCmd::Start { group, relay } => cmd_daemon_start(&group, relay).await?,
+            DaemonCmd::Start {
+                group,
+                relay,
+                bootstrap,
+            } => cmd_daemon_start(&group, relay, &bootstrap).await?,
             DaemonCmd::Status => cmd_daemon_status()?,
             DaemonCmd::LogLevel { level } => cmd_daemon_log_level(&level).await?,
             DaemonCmd::Install => cmd_daemon_install()?,
@@ -697,7 +704,11 @@ fn cmd_identity_export() -> errors::AcResult<()> {
 
 // ── Daemon commands ────────────────────────────────────────────────
 
-async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResult<()> {
+async fn cmd_daemon_start(
+    groups: &[String],
+    relay_mode: bool,
+    bootstrap: &[String],
+) -> errors::AcResult<()> {
     let id = match load_identity(data_dir_opt())? {
         Some(id) => id,
         None => {
@@ -760,7 +771,7 @@ async fn cmd_daemon_start(groups: &[String], relay_mode: bool) -> errors::AcResu
         Err(e) => tracing::warn!(%e, "健康检查端点启动失败 (端口可能被占用)"),
     }
 
-    network::run_daemon(&id, groups, relay_mode, &data_dir).await
+    network::run_daemon(&id, groups, relay_mode, bootstrap, &data_dir).await
 }
 
 fn cmd_daemon_status() -> errors::AcResult<()> {
