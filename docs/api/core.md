@@ -92,7 +92,7 @@ let json = serde_json::to_vec(&msg)?;
 - `msg_id: u64` — Unique message ID for dedup
 - `ttl: i64` — Expiration timestamp
 - `seq: u64` — Monotonic sender sequence number
-- `service: Option<ServiceCall>` — Service invocation (S10)
+- `service: Option<ServiceCall>` — Service invocation
 
 ### `ChatResponse`
 

@@ -1,4 +1,4 @@
-//! S10R102 — Service Discovery via GossipSub.
+//! Service Discovery via GossipSub.
 //!
 //! Agents broadcast their `ServiceInfo` list on a shared GossipSub topic
 //! so peers can discover what services are available on the network.
@@ -127,7 +127,7 @@ impl ServiceRegistry {
         }
     }
 
-    // ── Cache freshness (S10R108) ──────────────────────────────────
+    // ── Cache freshness ──────────────────────────────────
 
     /// Whether the registry has any cached data.
     pub fn has_cached_data(&self) -> bool {
@@ -297,7 +297,7 @@ pub fn load_registry(data_dir: &std::path::Path) -> AcResult<ServiceRegistry> {
     Ok(ServiceRegistry::from_snapshot(snapshot))
 }
 
-// ── Service Subscriptions (S10R107) ────────────────────────────────
+// ── Service Subscriptions ────────────────────────────────
 
 /// A single subscription entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -384,7 +384,7 @@ pub fn load_subscriptions(data_dir: &std::path::Path) -> AcResult<ServiceSubscri
     Ok(subs)
 }
 
-// ── Publication push via GossipSub (S13R135) ─────────────────────
+// ── Publication push via GossipSub ──────────────────────
 
 /// Broadcast a publication to all network subscribers via GossipSub.
 /// The caller should save the publication locally first; this function
@@ -405,7 +405,7 @@ pub fn publish_publication(
         service_id = %publication.service_id,
         version = publication.version,
         title = %publication.title,
-        "📡 公众号推送已广播 (GossipSub)"
+        "📡 发布推送已广播 (GossipSub)"
     );
     Ok(())
 }
@@ -439,7 +439,7 @@ pub fn handle_publication_message(
     }
 }
 
-// ── S14R144 Unit Tests ──────────────────────────────────────────
+// ── Unit Tests ──────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

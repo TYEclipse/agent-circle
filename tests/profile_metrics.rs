@@ -1,4 +1,4 @@
-//! S16R165-R168 — 二进制指标: 体积、冷启动、内存基线
+//! Binary metrics: binary size, cold start, memory baseline
 //!
 //! R165: memory profile baseline
 //! R166: CPU profile (idle measurement)

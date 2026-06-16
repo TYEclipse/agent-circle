@@ -1,4 +1,4 @@
-// S17R172 — 时钟偏移处理
+// Clock skew handling
 // 验收：两个节点时钟差 5min（甚至更大），消息不乱序
 //
 // 核心原理：agent-circle 使用序列号 (seq) 而非时间戳 (ts) 进行消息排序。

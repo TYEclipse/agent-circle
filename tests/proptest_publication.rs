@@ -1,4 +1,4 @@
-//! S14R145 — Proptest property tests for Publication + ServiceAnnouncement serde.
+//! Proptest property tests for Publication + ServiceAnnouncement serde.
 //!
 //! Verifies that random valid input survives serialize → deserialize roundtrip.
 

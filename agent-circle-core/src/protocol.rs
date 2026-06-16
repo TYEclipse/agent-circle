@@ -1,4 +1,4 @@
-//! S08R81-R82 — Protocol version constants and SemVer negotiation strategy.
+//! Protocol version constants and SemVer negotiation strategy.
 //!
 //! All wire-protocol identifiers are defined here so version bumps
 //! happen in one place.  The libp2p `identify` protocol advertises
@@ -56,13 +56,13 @@ pub fn services_topic() -> String {
     format!("agent-circle/services/{VERSION}")
 }
 
-/// GossipSub topic for publication push (公众号推送).
+/// GossipSub topic for publication push.
 /// Services publish new articles here; subscribers listen for updates.
 pub fn publications_topic() -> String {
     format!("agent-circle/publications/{VERSION}")
 }
 
-/// Remote diagnostics request-response protocol (S11R119).
+/// Remote diagnostics request-response protocol.
 pub fn doctor_protocol() -> String {
     format!("/agent-circle/doctor/{VERSION}")
 }

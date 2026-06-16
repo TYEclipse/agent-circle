@@ -1,4 +1,4 @@
-//! S09R91 — Plugin trait definition.
+//! Plugin trait definition.
 //!
 //! Every Agent Circle plugin implements [`AgentPlugin`] and exports it
 //! via a C-ABI entry point (`plugin_create`).

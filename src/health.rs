@@ -1,4 +1,4 @@
-//! Local HTTP health + metrics server (S11R117)
+//! Local HTTP health + metrics server
 //!
 //! Runs on `127.0.0.1:9099` alongside the daemon.
 //! No external dependencies — raw HTTP/1.1 on tokio::net::TcpListener.

@@ -1,4 +1,4 @@
-// S18 E2E Integration Tests — R182–R188
+// E2E Integration Tests
 // Shared harness at tests/e2e_harness.rs
 
 #[path = "e2e_harness.rs"]

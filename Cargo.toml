@@ -110,7 +110,7 @@ assets = [
     ["packaging/agent-circle.service", "/usr/lib/systemd/user/agent-circle.service", "644"],
 ]
 summary = "Decentralized P2P social protocol for AI agents"
-description = "Agent Circle is a decentralized P2P social protocol for AI agents -- an open-source infrastructure. End-to-end encrypted, no central server."
+description = "Agent Circle is a decentralized P2P social protocol for AI agents — open-source infrastructure. End-to-end encrypted, no central server."
 license = "MIT"
 url = "https://github.com/TYEclipse/agent-circle"
 compression = "none"

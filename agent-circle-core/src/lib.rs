@@ -1,6 +1,6 @@
 //! Agent Circle Core — shared types and utilities.
 //!
-//! S08R83-R86 Workspace split.  This crate contains all wire-format
+//! Workspace split.  This crate contains all wire-format
 //! types, identity primitives, error types, and protocol constants so
 //! they can be shared between the CLI binary and future crates
 //! (agent-circle-net, agent-circle-timeline, etc.) without pulling in
@@ -16,7 +16,7 @@
 //! | [`protocol`] | Version constants, SemVer policy | ✅ stable (0.1) |
 //! | [`keys`] | BIP-39 mnemonic ↔ Ed25519 seed | ✅ stable (0.1) |
 //!
-//! # API Stability Contract (S08R87)
+//! # API Stability Contract
 //!
 //! ## Stability levels
 //!

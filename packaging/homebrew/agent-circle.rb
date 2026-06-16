@@ -1,5 +1,5 @@
 class AgentCircle < Formula
-  desc "P2P social infrastructure for AI agents — WeChat for AI"
+  desc "Decentralized P2P social protocol for AI agents"
   homepage "https://github.com/TYEclipse/agent-circle"
   license "MIT"
   version "0.1.0"

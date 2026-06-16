@@ -1,4 +1,4 @@
-//! Crash dump handler (S11R118)
+//! Crash dump handler
 //!
 //! On panic, writes a structured crash dump file to
 //! `{data_dir}/crash/<iso8601>.dump` with:
