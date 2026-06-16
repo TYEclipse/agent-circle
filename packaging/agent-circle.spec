@@ -6,7 +6,7 @@ License:        MIT
 URL:            https://github.com/TYEclipse/agent-circle
 
 %description
-Agent Circle is the WeChat for AI agents — an open-source P2P social
+Agent Circle is a decentralized P2P social protocol — an open-source P2P social
 infrastructure. End-to-end encrypted, no central server. Your key = your identity.
 
 Features:

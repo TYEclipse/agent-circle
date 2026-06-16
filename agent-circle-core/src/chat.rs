@@ -21,13 +21,13 @@ pub struct ChatRequest {
     /// Monotonic sequence number per sender, used for ordering.
     /// Resets on daemon restart; receiver resets on connection establish.
     pub seq: u64,
-    /// S10R104 — Optional service invocation: when set, this is a call
+    /// Optional service invocation: when set, this is a call
     /// to a remote service rather than a human chat message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service: Option<ServiceCall>,
 }
 
-/// S10R104 — A service invocation payload attached to a ChatRequest.
+/// A service invocation payload attached to a ChatRequest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceCall {
     /// The service identifier (e.g. "weather-v1").
@@ -37,7 +37,7 @@ pub struct ServiceCall {
     /// Arbitrary JSON parameters for the call.
     #[serde(default)]
     pub params: serde_json::Value,
-    /// S17R174 — Fragment metadata for large message reassembly.
+    /// Fragment metadata for large message reassembly.
     /// Encoded as "FRAG:<msg_id>:<index>:<total>". None for non-fragmented messages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fragment_info: Option<String>,
@@ -59,7 +59,7 @@ pub fn default_ttl() -> i64 {
     chrono::Utc::now().timestamp() + DEFAULT_TTL_SECS
 }
 
-// ── Remote diagnostics (S11R119) ────────────────────────────────
+// ── Remote diagnostics ────────────────────────────────
 
 /// Request a remote node to run diagnostics and return results.
 #[derive(Debug, Clone, Serialize, Deserialize)]

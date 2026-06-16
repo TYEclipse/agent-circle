@@ -88,7 +88,7 @@ enum Commands {
     #[command(subcommand)]
     Service(ServiceCmd),
 
-    /// 插件 — Agent Plugin 管理 (S09)
+    /// 插件 — Agent Plugin 管理
     #[command(subcommand)]
     Plugin(PluginCmd),
 
@@ -98,7 +98,7 @@ enum Commands {
         cmd: DiagCmd,
     },
 
-    /// 全链路诊断 — 一键检查身份/网络/存储/联系人 (S11R111)
+    /// 全链路诊断 — 一键检查身份/网络/存储/联系人
     Doctor {
         /// 仅检查指定子系统 (identity|network|storage|contacts)
         #[arg(short, long)]
@@ -106,15 +106,15 @@ enum Commands {
         /// JSON 输出
         #[arg(short, long)]
         json: bool,
-        /// 远程诊断 — 请求指定 PeerId 运行自检 (S11R119)
+        /// 远程诊断 — 请求指定 PeerId 运行自检
         #[arg(long)]
         peer: Option<String>,
     },
 
-    /// 性能指标暴露 — OpenMetrics/Prometheus 格式 (S11R116)
+    /// 性能指标暴露 — OpenMetrics/Prometheus 格式
     Metrics,
 
-    /// 全屏终端界面 — TUI (S15R151)
+    /// 全屏终端界面 — TUI
     Tui,
 }
 
@@ -178,7 +178,7 @@ enum ServiceCmd {
         #[arg(short, long)]
         flush: bool,
     },
-    /// 发布服务到本地缓存 + 市场公告 (S10R109)
+    /// 发布服务到本地缓存 + 市场公告
     Publish {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
@@ -195,7 +195,7 @@ enum ServiceCmd {
         #[arg(short, long, value_delimiter = ',')]
         tags: Vec<String>,
     },
-    /// 发布公众号文章 — 向所有订阅者推送内容 (S13R132)
+    /// 发布文章 — 向所有订阅者推送内容
     Post {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
@@ -209,7 +209,7 @@ enum ServiceCmd {
         #[arg(short = 't', long, default_value = "text")]
         content_type: String,
     },
-    /// 查看公众号发布历史 (S13R132)
+    /// 查看发布历史
     History {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
@@ -217,14 +217,14 @@ enum ServiceCmd {
         #[arg(short, long, default_value = "20")]
         limit: usize,
     },
-    /// 查看订阅服务的待读推送 (S13R133)
+    /// 查看订阅服务的待读推送
     Notifications,
-    /// 标记已读 — 清除指定服务的推送通知 (S13R133)
+    /// 标记已读 — 清除指定服务的推送通知
     Read {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
     },
-    /// 主动发现网络服务 — 搜索本地注册 + daemon 状态感知 (S13R134)
+    /// 主动发现网络服务 — 搜索本地注册 + daemon 状态感知
     Discover {
         /// 搜索关键词 (省略则显示全部)
         query: Option<String>,
@@ -232,14 +232,14 @@ enum ServiceCmd {
         #[arg(short, long)]
         online: bool,
     },
-    /// 查看文章详情 — 全文输出 + Markdown→ANSI 渲染 (S13R136)
+    /// 查看文章详情 — 全文输出 + Markdown→ANSI 渲染
     View {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
         /// 文章版本号 (如 1, 2, 3...)
         version: u32,
     },
-    /// 评分 — 对服务打 1–5 星 (S13R137)
+    /// 评分 — 对服务打 1–5 星
     Rate {
         /// 服务标识符 (如 "weather-v1")
         service_id: String,
@@ -249,16 +249,16 @@ enum ServiceCmd {
         #[arg(short, long)]
         comment: Option<String>,
     },
-    /// 交互式浏览 — 服务市场 TUI (S13R138)
+    /// 交互式浏览 — 服务市场 TUI
     Browse,
-    /// 权限管理 — 设置服务访问模式 (S13R139)
+    /// 权限管理 — 设置服务访问模式
     Permit {
         /// 服务标识符
         service_id: String,
         /// 权限模式: public | approval | whitelist
         mode: String,
     },
-    /// 白名单管理 — 添加/移除白名单成员 (S13R139)
+    /// 白名单管理 — 添加/移除白名单成员
     Whitelist {
         /// 服务标识符
         service_id: String,
@@ -463,7 +463,7 @@ async fn run() -> errors::AcResult<()> {
     let is_daemon = matches!(cli.command, Commands::Daemon { .. });
     init_tracing(is_daemon);
 
-    // S11R118 — Register crash dump handler early (before any work)
+    // Register crash dump handler early (before any work)
     let _ = crash::init(storage::resolve_data_dir(cli.data_dir.as_ref())?);
 
     // Store data dir globally so storage module can access it
@@ -717,7 +717,7 @@ async fn cmd_daemon_start(
         }
     };
 
-    // S07R75 — Cross-platform control socket (replaces Unix-only SIGUSR1)
+    // Cross-platform control socket (replaces Unix-only SIGUSR1)
     // Spawn a local TCP listener so `agent-circle daemon log-level <LEVEL>`
     // works on Linux, macOS, and Windows alike.
     if let Some(handle) = RELOAD_HANDLE.get().cloned() {
@@ -765,7 +765,7 @@ async fn cmd_daemon_start(
 
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
 
-    // S11R117 — Start health/metrics HTTP server on 127.0.0.1:9099
+    // Start health/metrics HTTP server on 127.0.0.1:9099
     match health::spawn(data_dir.clone(), id.short_code.clone()).await {
         Ok(addr) => tracing::info!(%addr, "🏥 健康检查端点已启动"),
         Err(e) => tracing::warn!(%e, "健康检查端点启动失败 (端口可能被占用)"),
@@ -797,7 +797,7 @@ fn cmd_daemon_status() -> errors::AcResult<()> {
     Ok(())
 }
 
-/// S07R75 — Connect to daemon control socket and switch log level.
+/// Connect to daemon control socket and switch log level.
 async fn cmd_daemon_log_level(level: &str) -> errors::AcResult<()> {
     let levels: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
     if !levels.contains(&level) {
@@ -837,7 +837,7 @@ async fn cmd_daemon_log_level(level: &str) -> errors::AcResult<()> {
     Ok(())
 }
 
-/// S07R76-R78 — Install agent-circle as a system service.
+/// Install agent-circle as a system service.
 ///
 /// Platform mapping:
 ///   Linux   → systemd user unit  (~/.config/systemd/user/agent-circle.service)
@@ -1757,9 +1757,8 @@ fn cmd_timeline_verify() -> errors::AcResult<()> {
 }
 
 // ── Service discovery commands ────────────────────────────────────────
-// S10R103
 
-// S10R105 — 彩色表格展示层
+// Color table display layer
 fn cmd_service_list(verbose: bool) -> errors::AcResult<()> {
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
     let registry = service_discovery::load_registry(&data_dir)?;
@@ -2066,7 +2065,7 @@ fn cmd_service_negotiate(peer_id: &str, service_id: &str) -> errors::AcResult<()
     Ok(())
 }
 
-// ── Service cache command (S10R108) ──────────────────────────────
+// ── Service cache command ──────────────────────────────
 
 fn cmd_service_cache(stats: bool, flush: bool) -> errors::AcResult<()> {
     let data_dir = storage::resolve_data_dir(data_dir_opt())?;
@@ -2154,7 +2153,7 @@ fn cmd_service_cache(stats: bool, flush: bool) -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Service publish command (S10R109) ─────────────────────────────
+// ── Service publish command ─────────────────────────────
 
 fn cmd_service_publish(
     service_id: &str,
@@ -2204,7 +2203,7 @@ fn cmd_service_publish(
     Ok(())
 }
 
-// ── S13R132 Publication (公众号文章发布) ─────────────────────────
+// ── Publication (文章发布) ─────────────────────────
 
 fn cmd_service_post(
     service_id: &str,
@@ -2264,7 +2263,7 @@ fn cmd_service_post(
     history.push(publication.clone());
     storage::save_publication_history(&history, &data_dir)?;
 
-    println!("📰 公众号文章已发布:");
+    println!("📰 文章已发布:");
     println!("   服务:     {}", service_id);
     println!("   标题:     {}", title);
     println!("   版本:     v{}", publication.version);
@@ -2278,7 +2277,7 @@ fn cmd_service_post(
     println!("💡 提示: 订阅者将在下次连接时收到推送通知。");
     println!();
 
-    // Notify local subscribers (S13R133)
+    // Notify local subscribers
     let subs = service_discovery::load_subscriptions(&data_dir)?;
     let mut notified = 0usize;
     for s in subs.list() {
@@ -2304,13 +2303,13 @@ fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
 
     println!("📚 {} 的发布历史 (共 {} 条):", service_id, history.len());
 
-    // S13R137 — Show rating summary
+    // Show rating summary
     if let Ok(summary) = storage::rating_summary(&data_dir, service_id) {
         if summary.count > 0 {
             println!("⭐ {}", summary.stars_display());
         }
     }
-    // S13R139 — Show permission
+    // Show permission
     if let Ok(perm) = storage::load_permission(&data_dir, service_id) {
         println!("   {}", storage::permission_display(&perm));
     }
@@ -2332,7 +2331,7 @@ fn cmd_service_history(service_id: &str, limit: usize) -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Service subscription commands (S10R107) ──────────────────────
+// ── Service subscription commands ──────────────────────
 
 /// Parse "service_id" or "service_id@peer_id" format.
 fn parse_service_spec(spec: &str) -> (&str, Option<&str>) {
@@ -2419,7 +2418,7 @@ fn cmd_service_subscriptions() -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Publication notification commands (S13R133) ──────────────────
+// ── Publication notification commands ──────────────────
 
 /// List pending publication notifications from subscribed services.
 fn cmd_service_notifications() -> errors::AcResult<()> {
@@ -2481,7 +2480,7 @@ fn cmd_service_read(service_id: &str) -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Service discover via DHT+local registry (S13R134) ─────────────
+// ── Service discover via DHT+local registry ─────────────
 
 /// Actively discover services from the network (daemon-aware).
 fn cmd_service_discover(query: Option<&str>, online_only: bool) -> errors::AcResult<()> {
@@ -2604,7 +2603,7 @@ fn cmd_service_discover(query: Option<&str>, online_only: bool) -> errors::AcRes
     Ok(())
 }
 
-// ── Service view (S13R136 Markdown rendering) ────────────────────
+// ── Service view (Markdown rendering) ────────────────────
 
 /// Render basic markdown to ANSI terminal formatting.
 fn render_markdown(text: &str) -> String {
@@ -2743,7 +2742,7 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
     println!("╠══════════════════════════════════════════════════════════╣");
     println!("║  服务: {:<49}║", pub_msg.service_id);
 
-    // S13R137 — Show rating
+    // Show rating
     if let Ok(summary) = storage::rating_summary(&data_dir, service_id) {
         if summary.count > 0 {
             let stars = summary.stars_display();
@@ -2751,7 +2750,7 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
         }
     }
 
-    // S13R139 — Show permission
+    // Show permission
     if let Ok(perm) = storage::load_permission(&data_dir, service_id) {
         println!("║  🔏   {:<49}║", storage::permission_display(&perm));
     }
@@ -2804,7 +2803,7 @@ fn cmd_service_view(service_id: &str, version: u32) -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Service rating (S13R137) ──────────────────────────────────────
+// ── Service rating ──────────────────────────────────────
 
 fn cmd_service_rate(service_id: &str, score: u8, comment: Option<&str>) -> errors::AcResult<()> {
     if !(1..=5).contains(&score) {
@@ -2836,7 +2835,7 @@ fn cmd_service_rate(service_id: &str, score: u8, comment: Option<&str>) -> error
     Ok(())
 }
 
-// ── Service browse TUI (S13R138) ──────────────────────────────────
+// ── Service browse TUI ──────────────────────────────────
 
 /// Enter raw terminal mode via stty.
 fn enable_raw_mode() {
@@ -3058,7 +3057,7 @@ fn cmd_service_browse() -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Service permissions (S13R139) ─────────────────────────────────
+// ── Service permissions ─────────────────────────────────
 
 fn cmd_service_permit(service_id: &str, mode: &str) -> errors::AcResult<()> {
     use agent_circle_core::publication::ServicePermission;
@@ -3189,7 +3188,7 @@ fn cmd_plugin_list() -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Doctor command (S11R111) ────────────────────────────────────────
+// ── Doctor command ──────────────────────────────────────
 
 /// Run a single check, returning (label, status_icon, detail).
 type DoctorCheck = (&'static str, &'static str, String);
@@ -3221,7 +3220,7 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
         }
     }
 
-    // ── Storage check (S11R113 — integrity validation) ──────────
+    // ── Storage check (integrity validation) ──────────
     if should_run("storage") {
         if data_dir.exists() {
             let mut parts: Vec<String> = Vec::new();
@@ -3368,7 +3367,7 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
         }
     }
 
-    // ── Errors reference (S11R115) ───────────────────────────────
+    // ── Errors reference ───────────────────────────────
     if should_run("errors") {
         let codes = [
             (
@@ -3437,7 +3436,7 @@ fn cmd_doctor(check_filter: Option<&str>, json: bool) -> errors::AcResult<()> {
     Ok(())
 }
 
-// ── Remote doctor command (S11R119) ────────────────────────────────
+// ── Remote doctor command ──────────────────────────────
 
 async fn cmd_doctor_remote(
     peer_id_str: &str,
@@ -3561,7 +3560,7 @@ fn display_doctor_response(
     Ok(())
 }
 
-// ── Metrics command (S11R116) ──────────────────────────────────────
+// ── Metrics command ──────────────────────────────────────
 
 fn cmd_metrics() -> errors::AcResult<()> {
     let output = metrics::collect()?;
@@ -3637,7 +3636,7 @@ fn cmd_identity_restore(mnemonic: &str, passphrase: &str) -> errors::AcResult<()
     Ok(())
 }
 
-// ── S14R145 Markdown renderer unit tests ─────────────────────────
+// ── Markdown renderer unit tests ─────────────────────────
 
 #[cfg(test)]
 mod markdown_tests {
@@ -3700,7 +3699,7 @@ mod markdown_tests {
         assert!(out.contains("plain"));
     }
 
-    // ── S14R148 Edge cases ──────────────────────────────────────
+    // ── Edge cases ──────────────────────────────────────
 
     #[test]
     fn test_render_empty_string() {

@@ -1,4 +1,4 @@
-//! S16R162 — 消息吞吐量基准: JSON serde + ED25519 sign/verify
+//! Message throughput benchmark: JSON serde + ED25519 sign/verify
 //!
 //! Target: single-node 1000 msg/s throughput for the chat pipeline.
 //! Measures: serialize, deserialize, sign, verify, full pipeline.

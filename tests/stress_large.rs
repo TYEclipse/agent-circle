@@ -1,11 +1,11 @@
-//! S16R163 — 大群聊压测: 100-topic GossipSub mesh simulation
-//! S16R164 — 时间线大容量: 100K entries Merkle-DAG verify <1s
+//! Large group stress test: 100-topic GossipSub mesh simulation
+//! Timeline large capacity: 100K entries Merkle-DAG verify <1s
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-// ─── S16R163: 大群聊压测 ─────────────────────────────────────────
+// ─── Large group stress test ─────────────────────────────────────────
 
 /// Simulates 100 GossipSub topics with 10 concurrent publishers each.
 /// Each topic = a group chat; each publisher sends messages concurrently.
@@ -137,7 +137,7 @@ fn stress_gossipsub_churn() {
     println!("✅ 搅动压测通过 — 无崩溃、无死锁");
 }
 
-// ─── S16R164: 时间线大容量压测 ──────────────────────────────────
+// ─── Timeline large capacity stress test ──────────────────────────────────
 
 /// Build 100K-entry Merkle-DAG and verify in <1s.
 #[test]

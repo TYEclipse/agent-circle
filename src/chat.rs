@@ -1,2 +1,2 @@
-//! Chat wire types — re-exported from agent-circle-core (S08R83).
+// Chat wire types — re-exported from agent-circle-core.
 pub use agent_circle_core::chat::*;

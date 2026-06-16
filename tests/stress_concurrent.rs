@@ -1,4 +1,4 @@
-//! S16R161 — 并发连接压测: storage 层并发安全 + 1000 task swarm
+//! Concurrent connection stress test: storage layer concurrency safety + 1000 task swarm
 //!
 //! Simulates 1000 concurrent peers accessing the shared storage layer,
 //! verifying no data corruption and measuring throughput under load.

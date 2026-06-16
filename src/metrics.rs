@@ -1,4 +1,4 @@
-//! Prometheus / OpenMetrics exporter (S11R116)
+//! Prometheus / OpenMetrics exporter
 //!
 //! `agent-circle metrics` outputs OpenMetrics text format consumable by
 //! Prometheus, VictoriaMetrics, and other OpenMetrics-compatible scrapers.

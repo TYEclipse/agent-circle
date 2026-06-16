@@ -1,4 +1,4 @@
-// S17R171 — 极端 DHT 搅动测试
+// Extreme DHT churn test
 // 验收：大量节点频繁上下线，路由表不崩溃、状态一致
 
 #[cfg(test)]

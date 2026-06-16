@@ -27,7 +27,7 @@ pub struct Identity {
     pub signing_key: SigningKey,
     /// DID:key identifier (public, shareable)
     pub did: String,
-    /// Human-friendly short code (8-char hex, like a WeChat ID)
+    /// Human-friendly short code (8-char hex identifier)
     pub short_code: String,
 }
 
@@ -155,7 +155,7 @@ pub fn decode_did_key(did: &str) -> Result<VerifyingKey> {
 // ── Short Code ─────────────────────────────────────────────────────
 
 /// Derive a human-friendly 8-char short code from a DID.
-/// Like a WeChat ID — shorter than the full DID, but derived from it.
+/// Shorter than the full DID, but derived from it.
 fn encode_short_code(did: &str) -> String {
     let hash = blake3::hash(did.as_bytes());
     hex::encode(&hash.as_bytes()[..4])
@@ -165,7 +165,7 @@ fn encode_short_code(did: &str) -> String {
 
 /// A service registered by an agent — discoverable by peers on the DHT.
 ///
-/// S10R101: Extends Agent Card with the `services` field so agents can
+/// Extends Agent Card with the `services` field so agents can
 /// advertise what they offer (weather bot, translator, relay, …).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceInfo {
@@ -182,15 +182,15 @@ pub struct ServiceInfo {
     /// Searchable tags for discovery (e.g. ["weather", "forecast"]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
-    /// S10R106 — Supported protocol versions (e.g. ["1.0.0", "2.0.0-beta"]).
+    /// Supported protocol versions (e.g. ["1.0.0", "2.0.0-beta"]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_versions: Vec<String>,
-    /// S10R106 — JSON Schema describing accepted input parameters.
+    /// JSON Schema describing accepted input parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<String>,
 }
 
-// ── Capability Negotiation (S10R106) ────────────────────────────────
+// ── Capability Negotiation ────────────────────────────────
 
 /// Sent by a caller to probe a service's capabilities before invoking.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -241,7 +241,7 @@ pub struct CapabilityStatement {
 
 /// A self-signed capability card — "what this agent is"
 ///
-/// Equivalent to a WeChat profile: name, bio (capabilities), owner info.
+/// Equivalent to a user profile: name, bio (capabilities), owner info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCard {
     #[serde(rename = "@context")]
@@ -251,7 +251,7 @@ pub struct AgentCard {
     pub owner: String,
     pub model: String,
     pub capabilities: Vec<String>,
-    /// S10R101 — Services this agent provides.
+    /// Services this agent provides.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<ServiceInfo>,
     pub endpoints: Vec<String>,

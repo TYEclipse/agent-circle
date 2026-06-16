@@ -1,4 +1,4 @@
-// S17 Boundary Tests — R175 · R176 · R177 · R178 · R179
+// Boundary Tests — edge-case validation
 // Long stability, partition recovery, collision, IPv6, slow network
 
 #[cfg(test)]

@@ -225,7 +225,7 @@ fn request_id_to_u64(id: request_response::OutboundRequestId) -> u64 {
     unsafe { std::mem::transmute(id) }
 }
 
-// ── Remote diagnostics (S11R119) ────────────────────────────────────
+// ── Remote diagnostics ────────────────────────────────────
 
 /// Send a remote diagnostics request to a peer.
 pub fn send_doctor(
@@ -383,10 +383,10 @@ pub async fn run_daemon(
         info!(name = %name, topic = %topic, "已加入群组");
     }
 
-    // S10R102 — Subscribe to service discovery channel
+    // Subscribe to service discovery channel
     service_discovery::subscribe_services(&mut swarm)?;
 
-    // S13R135 — Subscribe to publication push channel (公众号推送)
+    // Subscribe to publication push channel
     {
         let pub_topic = gossipsub::IdentTopic::new(crate::protocol::publications_topic());
         swarm
@@ -394,7 +394,7 @@ pub async fn run_daemon(
             .gossip
             .subscribe(&pub_topic)
             .map_err(|e| AcError::Network(format!("publications subscribe failed: {e}")))?;
-        info!(topic = %pub_topic, "已订阅公众号推送频道");
+        info!(topic = %pub_topic, "已订阅发布推送频道");
     }
 
     info!("Agent Circle 守护进程已启动");
@@ -437,9 +437,9 @@ pub async fn run_daemon(
     stats_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut tick_count: u64 = 0;
 
-    // S10R102 — Service discovery registry + periodic publication
+    // Service discovery registry + periodic publication
     let mut service_registry = ServiceRegistry::default();
-    // S10R107 — Load service subscriptions
+    // Load service subscriptions
     let mut service_subs = service_discovery::load_subscriptions(data_dir).unwrap_or_default();
     if !service_subs.list().is_empty() {
         info!(
@@ -741,7 +741,7 @@ pub async fn run_daemon(
 
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Chat(_)) => {}
 
-            // ── Doctor: incoming remote diagnostics request (S11R119) ──
+            // ── Doctor: incoming remote diagnostics request ──
             SwarmEvent::Behaviour(AgentCircleBehaviourEvent::Doctor(
                 request_response::Event::Message {
                     message:
@@ -767,7 +767,7 @@ pub async fn run_daemon(
                 gossipsub::Event::Message { message, .. },
             )) => {
                 let topic_str = message.topic.to_string();
-                // S10R102 — Route service announcements to the registry
+                // Route service announcements to the registry
                 if topic_str == crate::protocol::services_topic() {
                     service_discovery::handle_service_message(
                         &message.data,
@@ -775,7 +775,7 @@ pub async fn run_daemon(
                         data_dir,
                         Some(&mut service_subs),
                     );
-                // S13R135 — Route publication push to notification handler
+                // Route publication push to notification handler
                 } else if topic_str == crate::protocol::publications_topic() {
                     service_discovery::handle_publication_message(
                         &message.data,
@@ -887,7 +887,7 @@ pub async fn run_daemon(
                     }
                 }
             }
-            // S10R102 — Periodically publish own services
+            // Periodically publish own services
             _ = service_pub_timer.tick() => {
                 // Re-publish even if empty — keeps the subscription alive
                 // TODO R103: Load services from AgentCard instead of empty vec
@@ -900,7 +900,7 @@ pub async fn run_daemon(
                     "服务发布周期"
                 );
             }
-            // S10R102 — Prune stale service entries
+            // Prune stale service entries
             _ = service_prune_timer.tick() => {
                 service_registry.prune(600); // 10 min staleness
             }

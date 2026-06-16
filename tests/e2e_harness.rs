@@ -1,4 +1,4 @@
-// S18 E2E Test Harness — shared module for e2e_tests.rs
+// E2E Test Harness — shared module for e2e_tests.rs
 
 #![allow(dead_code)]
 

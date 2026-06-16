@@ -312,7 +312,7 @@ mod tests {
     }
 }
 
-// ── S13R131 Publication history (公众号) ─────────────────────────
+// ── Publication history ─────────────────────────
 
 use agent_circle_core::publication::PublicationHistory;
 use std::path::Path;
@@ -342,7 +342,7 @@ pub fn save_publication_history(history: &PublicationHistory, data_dir: &Path) -
     Ok(())
 }
 
-// ── Publication notifications (S13R133) ──────────────────────────
+// ── Publication notifications ──────────────────────────
 
 use std::collections::HashMap;
 
@@ -388,7 +388,7 @@ pub fn clear_notifications(data_dir: &Path, service_id: &str) -> AcResult<()> {
     save_notifications(&n, data_dir)
 }
 
-// ── Ratings storage (S13R137) ────────────────────────────────────
+// ── Ratings storage ────────────────────────────────────
 
 use agent_circle_core::publication::Rating;
 
@@ -435,7 +435,7 @@ pub fn rating_summary(
     ))
 }
 
-// ── Service permissions (S13R139) ─────────────────────────────────
+// ── Service permissions ─────────────────────────────────
 
 use agent_circle_core::publication::ServicePermission;
 
@@ -526,7 +526,7 @@ mod publication_storage_tests {
     }
 }
 
-// ── S14R142 Notification / Rating / Permission storage tests ────
+// ── Notification / Rating / Permission storage tests ────
 
 #[cfg(test)]
 mod notification_storage_tests {

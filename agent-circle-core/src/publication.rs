@@ -1,7 +1,7 @@
-//! Publication module — 公众号 (Public Account) data model
+//! Publication module — data model for published content
 //!
-//! Models for agent services that publish content to subscribers,
-//! analogous to WeChat Official Accounts.  Keeps the minimal-dependency
+//! Models for agent services that publish content to subscribers.
+//! Keeps the minimal-dependency
 //! contract of `agent-circle-core` (serde-only, no libp2p).
 
 use chrono::{DateTime, Utc};
@@ -20,7 +20,7 @@ pub enum ContentType {
 
 // ── Publication ────────────────────────────────────────────────────
 
-/// A single published message from a service (公众号文章).
+/// A single published message from a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Publication {
     /// Unique publication ID (UUID v4).
@@ -185,7 +185,7 @@ pub enum ServicePermission {
     Whitelist(Vec<String>),
 }
 
-// ── Ratings & Reviews (S13R137) ──────────────────────────────────
+// ── Ratings & Reviews ──────────────────────────────────
 
 /// A subscriber's rating + optional review of a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
-    // ── S14R142 Rating tests ─────────────────────────────────────
+    // ── Rating tests ─────────────────────────────────────
 
     fn sample_rating(service_id: &str, reviewer: &str, score: u8) -> Rating {
         Rating {
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(perm, ServicePermission::Public);
     }
 
-    // ── S14R146 Wire protocol serde tests ────────────────────────
+    // ── Wire protocol serde tests ────────────────────────
 
     #[test]
     fn test_publish_request_serde() {

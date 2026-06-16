@@ -54,7 +54,7 @@ payload = gzbuf.getvalue()
 main_tags = [
     (1000, 6, "agent-circle"), (1001, 6, "0.1.0"), (1002, 6, "1"),
     (1004, 8, "P2P social infrastructure for AI agents"),
-    (1005, 8, "Agent Circle is the WeChat for AI agents."),
+    (1005, 8, "Agent Circle is a decentralized P2P social protocol."),
     (1014, 6, "MIT"), (1020, 6, "https://github.com/TYEclipse/agent-circle"),
     (1021, 6, "linux"), (1022, 6, "x86_64"),
 ]

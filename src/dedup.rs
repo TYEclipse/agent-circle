@@ -1,7 +1,7 @@
 //! Message deduplication — prevents double-processing when retries
 //! deliver the same message more than once.
 //!
-//! Combined with ACK + retry (S02R15), this gives "effectively-once"
+//! Combined with ACK + retry, this gives "effectively-once"
 //! delivery semantics: the recipient may receive duplicates at the
 //! transport layer, but the dedup filter ensures each message is
 //! only processed once at the application layer.
